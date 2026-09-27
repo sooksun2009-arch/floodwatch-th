@@ -156,6 +156,12 @@ class Settings(BaseSettings):
 
     cors_origins: str = "*"
 
+    # Shared secret for POST /api/stations/bma/ingest. The Bangkok drainage
+    # site refuses connections from outside Thailand, so the container cannot
+    # reach it and a relay that can has to push the readings in instead. Unset
+    # leaves the endpoint closed.
+    ingest_token: str = ""
+
 
 def _safe_header(value: str, fallback: str) -> str:
     """Make a config string safe to send as an HTTP header value.

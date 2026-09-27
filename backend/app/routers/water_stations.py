@@ -1,10 +1,14 @@
 """Canal/river gauge readings: public reads, moderator-triggered sync."""
 from datetime import timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import hmac
+
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..bma_stations import ingest as ingest_bma
+from ..config import settings
 from ..database import get_db
 from ..history import station_history
 from ..deps import require_moderator
@@ -136,6 +140,46 @@ async def history(station_id: str, db: Session = Depends(get_db),
     result = await station_history(station.external_id, days=days)
     return {"station_id": station.id, "name": station.name,
             "source": station.source, **result}
+
+
+@router.post("/bma/ingest", response_model=dict)
+def ingest_relay(
+    payload: dict = Body(...),
+    authorization: str = Header(default=""),
+    db: Session = Depends(get_db),
+):
+    """Accept Bangkok gauge readings pushed in by a relay.
+
+    The drainage site drops connections from outside Thailand, so this
+    deployment cannot fetch them itself — something that can reach it posts
+    the page here.
+
+    Closed unless INGEST_TOKEN is set. It writes to the map, so it is not
+    something to leave open by default on a deployment that never uses it.
+    """
+    if not settings.ingest_token:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            "ช่องรับข้อมูลปิดอยู่ (ยังไม่ได้ตั้ง INGEST_TOKEN)")
+
+    supplied = authorization.removeprefix("Bearer ").strip()
+    # compare_digest, not ==: string comparison returns early on the first
+    # wrong byte, which leaks the token a character at a time to anyone
+    # willing to time the responses.
+    if not hmac.compare_digest(supplied, settings.ingest_token):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "โทเคนไม่ถูกต้อง")
+
+    summary_html = payload.get("summary_html")
+    if not isinstance(summary_html, str) or not summary_html.strip():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "ต้องส่ง summary_html")
+
+    coords = payload.get("coords")
+    if coords is not None and not isinstance(coords, dict):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "coords ต้องเป็น object")
+
+    try:
+        return ingest_bma(db, summary_html, coords)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
 
 @router.post("/sync", response_model=dict)

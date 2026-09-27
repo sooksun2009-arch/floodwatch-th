@@ -58,6 +58,13 @@ services:
       - key: SYNC_BMA_ON_START
         value: "true"
 
+      # Shared secret for POST /api/stations/bma/ingest. The Bangkok drainage
+      # site drops connections from outside Thailand, so this container cannot
+      # fetch those gauges and a relay that can reach the site pushes them in.
+      # Leave unset and the endpoint stays closed.
+      - key: INGEST_TOKEN
+        generateValue: true
+
       - key: GEOCODE_ENABLED
         value: "true"
       # Nominatim refuses requests whose User-Agent does not identify a real

@@ -196,6 +196,63 @@ def to_record(summary: dict, detail: dict) -> dict | None:
     }
 
 
+def ingest(db: Session, summary_html: str,
+           coords: dict[str, dict] | None = None) -> dict:
+    """Take readings a relay fetched on our behalf and store them.
+
+    The Bangkok drainage site drops connections from outside Thailand, so the
+    container cannot reach it at all — not refused, unreachable. Something that
+    can reach it posts the page here instead.
+
+    The relay stays a pipe: it sends the summary page exactly as it received
+    it and this parses it, so the parsing stays in one place that is tested,
+    and a change to the page never means editing a script in someone's Google
+    account. Coordinates are the one exception. They live on a 876 KB page per
+    station, which is not worth relaying three hundred times for two numbers
+    that never change, so the relay extracts those itself and sends them once.
+    """
+    rows = parse_summary(summary_html)
+    if not rows:
+        raise ValueError("อ่านตารางสรุปของ กทม. ไม่ได้ — หน้าที่ส่งมาอาจไม่ใช่หน้า Summary")
+
+    details: dict[str, dict] = {
+        station.external_id: {"lat": station.lat, "lng": station.lng,
+                              "bank_level": station.bank_level}
+        for station in db.execute(
+            select(WaterStation).where(WaterStation.source == SOURCE)
+        ).scalars()
+    }
+
+    accepted = 0
+    for station_id, value in (coords or {}).items():
+        try:
+            lat, lng = float(value["lat"]), float(value["lng"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        # Same gate as our own fetch path: a station outside Thailand is a
+        # parsing accident, not a station.
+        if not in_thailand(lat, lng):
+            continue
+        entry = dict(details.get(str(station_id)) or {})
+        entry["lat"], entry["lng"] = lat, lng
+        for key in ("bank_level", "warn_level", "critical_level"):
+            if value.get(key) is not None:
+                entry[key] = _as_float(str(value[key]))
+        details[str(station_id)] = entry
+        accepted += 1
+
+    result = persist(db, rows, details)
+    result["coords_accepted"] = accepted
+    # Which stations still have no position, so the relay knows what to fetch
+    # next instead of walking all three hundred pages every run.
+    result["need_coords"] = [
+        r["external_id"] for r in rows if r["external_id"] not in details
+    ][:50]
+    logger.info("รับข้อมูล กทม. จากรีเลย์: %s แถว · พิกัดใหม่ %s · ยังขาดพิกัด %s",
+                len(rows), accepted, len(result["need_coords"]))
+    return result
+
+
 async def _fetch(client: httpx.AsyncClient, url: str) -> str:
     resp = await client.get(url, headers={"User-Agent": settings.http_user_agent})
     resp.raise_for_status()
@@ -242,6 +299,25 @@ async def sync(db: Session) -> dict:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}",
                 "created": 0, "updated": 0, "pending_detail": 0}
 
+    return persist(db, rows, details, missing=missing, fetched=budget)
+
+
+def persist(db: Session, rows: list[dict], details: dict[str, dict], *,
+            missing: list[str] | None = None,
+            fetched: list[str] | None = None) -> dict:
+    """Upsert parsed rows. Separate from fetching so the same, tested code
+    handles readings we pulled ourselves and readings a relay handed us."""
+    existing = {
+        station.external_id: station
+        for station in db.execute(
+            select(WaterStation).where(WaterStation.source == SOURCE)
+        ).scalars()
+    }
+    missing = missing if missing is not None else [
+        r["external_id"] for r in rows if r["external_id"] not in details
+    ]
+    fetched = fetched or []
+
     created = updated = skipped = 0
     now = utcnow()
     for row in rows:
@@ -265,7 +341,7 @@ async def sync(db: Session) -> dict:
             updated += 1
 
     db.commit()
-    still_missing = max(0, len(missing) - len(budget))
+    still_missing = max(0, len(missing) - len(fetched))
     logger.info("ซิงก์ กทม.: ใหม่ %s อัปเดต %s ยังไม่มีพิกัด %s", created, updated, still_missing)
     return {"ok": True, "created": created, "updated": updated, "skipped": skipped,
             "total": len(rows), "pending_detail": still_missing, "synced_at": now}

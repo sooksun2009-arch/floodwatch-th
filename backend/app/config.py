@@ -102,6 +102,12 @@ class Settings(BaseSettings):
 
     seed_admin_username: str = "admin"
     seed_admin_password: str = "admin1234"
+    # Break-glass: set this to reset the admin password on the next boot, then
+    # remove it. Changing SEED_ADMIN_PASSWORD does nothing once the account
+    # exists — deliberately, so a restart never silently rewrites credentials —
+    # which otherwise leaves a forgotten password locking the operator out of
+    # their own deployment for good.
+    admin_password_reset: str = ""
     seed_demo_data: bool = True
 
     cors_origins: str = "*"

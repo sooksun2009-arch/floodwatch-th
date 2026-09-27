@@ -4,14 +4,18 @@ Idempotent — safe to run on every boot. Province centroids are approximate
 (provincial city centre, not a polygon centroid); they are used to group reports
 and to anchor chatbot place matches, not to draw boundaries.
 """
+import logging
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .config import settings
 from .models import (
-    Area, Camera, FloodReport, Role, User, utcnow,
+    Area, AuditLog, Camera, FloodReport, Role, User, utcnow,
 )
-from .security import hash_password
+from .security import hash_password, verify_password
+
+logger = logging.getLogger("floodwatch.seed")
 
 # (province code, ชื่อไทย, English, lat, lng)
 PROVINCES: list[tuple[str, str, str, float, float]] = [
@@ -212,11 +216,40 @@ def seed_areas(db: Session) -> None:
     db.commit()
 
 
+def _apply_password_reset(db: Session, admin: User) -> None:
+    """Reset the admin password when ADMIN_PASSWORD_RESET is set.
+
+    Only runs when the variable holds a value, so a normal restart never
+    touches credentials. The operator is expected to clear it afterwards; the
+    warning below says so, and the change is written to the audit log so a
+    reset is never invisible.
+    """
+    new_password = (settings.admin_password_reset or "").strip()
+    if not new_password:
+        return
+    if len(new_password) < 8:
+        logger.warning("ADMIN_PASSWORD_RESET สั้นเกินไป (ต้อง 8 ตัวขึ้นไป) — ข้ามการรีเซ็ต")
+        return
+    if verify_password(new_password, admin.hashed_password):
+        return  # already set; nothing to do and nothing to log
+
+    admin.hashed_password = hash_password(new_password)
+    admin.is_active = True
+    db.add(AuditLog(actor_id=admin.id, actor_name=admin.username,
+                    action="admin_password_reset", entity="user", entity_id=admin.id,
+                    detail="รีเซ็ตผ่านตัวแปร ADMIN_PASSWORD_RESET ตอนบูต"))
+    db.commit()
+    logger.warning(
+        "รีเซ็ตรหัสผ่านบัญชี %s แล้ว — ให้ลบตัวแปร ADMIN_PASSWORD_RESET ออกทันที "
+        "ไม่เช่นนั้นรหัสจะค้างอยู่ในค่าตั้งของระบบ", admin.username)
+
+
 def seed_admin(db: Session) -> User | None:
     admin = db.execute(
         select(User).where(func.lower(User.username) == settings.seed_admin_username.lower())
     ).scalar_one_or_none()
     if admin:
+        _apply_password_reset(db, admin)
         return admin
 
     admin = User(

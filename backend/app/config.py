@@ -116,15 +116,27 @@ class Settings(BaseSettings):
     # --- Photo storage ---
     # Unset means the container's own filesystem, which on a host with no
     # persistent disk means every deploy deletes every photo ever uploaded.
-    # Fill all five in and photos go to Cloudflare R2 (or any S3-compatible
-    # bucket) instead and outlive the container.
-    #   endpoint:    https://<account id>.r2.cloudflarestorage.com
-    #   public base: the bucket's public r2.dev URL, or a custom domain
-    r2_endpoint_url: str = ""
-    r2_access_key_id: str = ""
-    r2_secret_access_key: str = ""
-    r2_bucket: str = ""
-    r2_public_base_url: str = ""
+    # Fill these in and photos go to any S3-compatible bucket instead, where
+    # they outlive the container. Two that work:
+    #
+    #   Supabase Storage (no card required)
+    #     endpoint:    https://<project ref>.supabase.co/storage/v1/s3
+    #     region:      the project's region, e.g. ap-southeast-1 — required,
+    #                  because the signature is computed over it
+    #     public base: https://<ref>.supabase.co/storage/v1/object/public/<bucket>
+    #
+    #   Cloudflare R2
+    #     endpoint:    https://<account id>.r2.cloudflarestorage.com
+    #     region:      auto
+    #     public base: the bucket's r2.dev URL, or a custom domain
+    s3_endpoint_url: str = ""
+    s3_access_key_id: str = ""
+    s3_secret_access_key: str = ""
+    s3_bucket: str = ""
+    s3_public_base_url: str = ""
+    # R2 accepts "auto"; most other providers sign against a real region and
+    # reject the request outright if it does not match theirs.
+    s3_region: str = "auto"
 
     # Optional: let Claude phrase the chatbot answer from retrieved facts.
     # Off by default — the deterministic engine answers without any API credit.

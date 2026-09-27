@@ -1,10 +1,11 @@
 """Where uploaded flood photos live.
 
-Local disk by default. Point the R2_* settings at a Cloudflare R2 bucket (or any
-S3-compatible store) and photos go there instead, which is the only way they
-survive on a host with no persistent disk: on the free plan every deploy wipes
-the container's filesystem, so reports keep their text, depth and position while
-the picture — usually the most convincing part of the report — disappears.
+Local disk by default. Point the S3_* settings at any S3-compatible bucket —
+Supabase Storage, Cloudflare R2, Backblaze B2 — and photos go there instead,
+which is the only way they survive on a host with no persistent disk: on the
+free plan every deploy wipes the container's filesystem, so reports keep their
+text, depth and position while the picture — usually the most convincing part
+of the report — disappears.
 
 This module is also the single place that decides whether a photo URL is one of
 ours. `photo_url` arrives on the report payload as a plain string from whoever
@@ -31,28 +32,28 @@ _client_lock = threading.Lock()
 _client = None
 
 
-def r2_enabled() -> bool:
-    return bool(settings.r2_bucket and settings.r2_endpoint_url
-                and settings.r2_access_key_id and settings.r2_secret_access_key
-                and settings.r2_public_base_url)
+def bucket_enabled() -> bool:
+    return bool(settings.s3_bucket and settings.s3_endpoint_url
+                and settings.s3_access_key_id and settings.s3_secret_access_key
+                and settings.s3_public_base_url)
 
 
 def backend_name() -> str:
-    return "r2" if r2_enabled() else "local"
+    return "bucket" if bucket_enabled() else "local"
 
 
 def _public_base() -> str:
-    return settings.r2_public_base_url.rstrip("/") + "/"
+    return settings.s3_public_base_url.rstrip("/") + "/"
 
 
 def public_prefixes() -> list[str]:
     """Every prefix a photo of ours may start with.
 
-    The local prefix stays valid even after R2 is switched on, so photos filed
-    before the switch keep resolving instead of turning into broken images.
+    The local prefix stays valid even after the bucket is switched on, so photos
+    filed before the switch keep resolving instead of becoming broken images.
     """
     prefixes = [LOCAL_PREFIX]
-    if r2_enabled():
+    if bucket_enabled():
         prefixes.append(_public_base())
     return prefixes
 
@@ -82,12 +83,18 @@ def _get_client():
 
             _client = boto3.client(
                 "s3",
-                endpoint_url=settings.r2_endpoint_url,
-                aws_access_key_id=settings.r2_access_key_id,
-                aws_secret_access_key=settings.r2_secret_access_key,
-                region_name="auto",          # R2 ignores regions but SigV4 wants one
-                config=Config(signature_version="s3v4",
-                              retries={"max_attempts": 3, "mode": "standard"}),
+                endpoint_url=settings.s3_endpoint_url,
+                aws_access_key_id=settings.s3_access_key_id,
+                aws_secret_access_key=settings.s3_secret_access_key,
+                region_name=settings.s3_region or "auto",
+                config=Config(
+                    signature_version="s3v4",
+                    # Bucket in the path, not the hostname. Providers serving
+                    # from a shared domain cannot do virtual-host style at all,
+                    # and the ones that can accept path style too.
+                    s3={"addressing_style": "path"},
+                    retries={"max_attempts": 3, "mode": "standard"},
+                ),
             )
         return _client
 
@@ -97,14 +104,14 @@ def save_jpeg(data: bytes, name: str) -> str:
     if not UPLOAD_NAME.fullmatch(name):
         raise ValueError(f"ชื่อไฟล์ไม่ถูกรูปแบบ: {name}")
 
-    if r2_enabled():
+    if bucket_enabled():
         _get_client().put_object(
-            Bucket=settings.r2_bucket,
+            Bucket=settings.s3_bucket,
             Key=name,
             Body=data,
             ContentType="image/jpeg",
-            # Photos never change once written, so let browsers and Cloudflare
-            # keep them for a year.
+            # Photos never change once written, so let browsers and any CDN in
+            # front of the bucket keep them for a year.
             CacheControl="public, max-age=31536000, immutable",
         )
         return _public_base() + name

@@ -70,17 +70,22 @@ services:
       - key: UPLOAD_DIR
         value: /tmp/uploads
 
-      # Cloudflare R2 (or any S3-compatible bucket) makes photos outlive the
-      # container. Fill in all five in the dashboard to switch storage over;
-      # leave them blank and the app keeps using local disk. Photos already
-      # uploaded to disk keep working either way.
-      - key: R2_ENDPOINT_URL
+      # An S3-compatible bucket (Supabase Storage, Cloudflare R2, Backblaze B2)
+      # makes photos outlive the container. Fill these in from the dashboard to
+      # switch storage over; leave them blank and the app keeps using local
+      # disk. Photos already on disk keep working either way.
+      - key: S3_ENDPOINT_URL
         sync: false
-      - key: R2_ACCESS_KEY_ID
+      - key: S3_ACCESS_KEY_ID
         sync: false
-      - key: R2_SECRET_ACCESS_KEY
+      - key: S3_SECRET_ACCESS_KEY
         sync: false
-      - key: R2_BUCKET
+      - key: S3_BUCKET
         sync: false
-      - key: R2_PUBLIC_BASE_URL
+      - key: S3_PUBLIC_BASE_URL
+        sync: false
+      # Must match the bucket's real region. R2 is the exception and takes
+      # "auto"; elsewhere a wrong value fails every upload with a signature
+      # error, because the region is part of what gets signed.
+      - key: S3_REGION
         sync: false

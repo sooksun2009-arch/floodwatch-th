@@ -38,7 +38,7 @@ def a_jpeg(size=(40, 30)):
     return buf.getvalue()
 
 
-class FakeR2:
+class FakeBucket:
     """Stands in for the boto3 client so no network or account is needed."""
     def __init__(self, explode=False):
         self.explode = explode
@@ -51,25 +51,28 @@ class FakeR2:
         return {}
 
 
-R2_ENV = {
-    "r2_endpoint_url": "https://acct.r2.cloudflarestorage.com",
-    "r2_access_key_id": "key",
-    "r2_secret_access_key": "secret",
-    "r2_bucket": "floodwatch-photos",
-    "r2_public_base_url": "https://pics.floodwatch.example",
+# Shaped like a real Supabase Storage project: a bucket served from a path on a
+# shared domain, and a region that is signed over rather than ignored.
+BUCKET_ENV = {
+    "s3_endpoint_url": "https://proj.supabase.example/storage/v1/s3",
+    "s3_access_key_id": "key",
+    "s3_secret_access_key": "secret",
+    "s3_bucket": "flood-photos",
+    "s3_public_base_url": "https://proj.supabase.example/storage/v1/object/public/flood-photos",
+    "s3_region": "ap-southeast-1",
 }
 
 
-def use_r2(explode=False):
-    for field, value in R2_ENV.items():
+def use_bucket(explode=False):
+    for field, value in BUCKET_ENV.items():
         setattr(settings, field, value)
-    storage._client = FakeR2(explode=explode)
+    storage._client = FakeBucket(explode=explode)
     return storage._client
 
 
 def use_local():
-    for field in R2_ENV:
-        setattr(settings, field, "")
+    for field in BUCKET_ENV:
+        setattr(settings, field, "" if field != "s3_region" else "auto")
     storage._client = None
 
 
@@ -92,20 +95,21 @@ for url, want, label in [
 
 # R2 on: its public URLs become valid, and the local ones stay valid so photos
 # uploaded before the switch do not turn into broken images.
-use_r2()
-check("เปิด R2 แล้ว backend เปลี่ยน", storage.backend_name() == "r2", storage.backend_name())
-check("URL ของ R2 → รับ",
-      storage.is_managed_url("https://pics.floodwatch.example/20260927-abc123def456.jpg"))
-check("รูปเก่าที่อยู่ในเครื่อง ยังใช้ได้หลังเปิด R2", storage.is_managed_url(GOOD))
+use_bucket()
+check("เปิดถังเก็บแล้ว backend เปลี่ยน", storage.backend_name() == "bucket", storage.backend_name())
+check("URL ของถังเก็บ → รับ",
+      storage.is_managed_url(BUCKET_ENV["s3_public_base_url"] + "/20260927-abc123def456.jpg"))
+check("รูปเก่าที่อยู่ในเครื่อง ยังใช้ได้หลังเปิดถังเก็บ", storage.is_managed_url(GOOD))
 check("โดเมนอื่นที่ขึ้นต้นคล้ายกัน → ปฏิเสธ",
-      not storage.is_managed_url("https://pics.floodwatch.example.evil.com/20260927-abc123def456.jpg"))
+      not storage.is_managed_url("https://proj.supabase.example.evil.com/storage/v1/object/public/flood-photos/20260927-abc123def456.jpg"))
 
 # ---------------------------------------------------------------- writing
-fake = use_r2()
+fake = use_bucket()
 url = storage.save_jpeg(a_jpeg(), "20260927-0123456789ab.jpg")
-check("เขียนขึ้น R2 แล้วคืน URL สาธารณะ",
-      url == "https://pics.floodwatch.example/20260927-0123456789ab.jpg", url)
+check("เขียนขึ้นถังเก็บแล้วคืน URL สาธารณะ",
+      url == BUCKET_ENV["s3_public_base_url"] + "/20260927-0123456789ab.jpg", url)
 check("ส่ง ContentType ถูกต้อง", fake.calls[0]["ContentType"] == "image/jpeg", fake.calls[0])
+check("เขียนเข้า bucket ที่ตั้งค่าไว้", fake.calls[0]["Bucket"] == "flood-photos", fake.calls[0])
 check("ตั้ง cache ยาว เพราะรูปไม่เคยเปลี่ยน",
       "immutable" in fake.calls[0]["CacheControl"], fake.calls[0].get("CacheControl"))
 check("ไม่ได้เขียนลงดิสก์ในเครื่องด้วย",
@@ -161,7 +165,7 @@ with TestClient(app) as c:
 
     # A broken bucket must fail loudly. Falling back to local disk would look
     # like success and then lose the photo at the next deploy.
-    use_r2(explode=True)
+    use_bucket(explode=True)
     r = c.post("/api/uploads", files={"file": ("f.jpg", a_jpeg(), "image/jpeg")})
     check("ถังเก็บรูปล่ม → ตอบ 503 ไม่แอบเขียนลงเครื่อง", r.status_code == 503,
           f"{r.status_code} {r.text[:150]}")
@@ -173,7 +177,7 @@ with TestClient(app) as c:
 # ---------------------------------------------------------------- real client
 # Everything above swaps in a fake, so nothing has yet proved the actual boto3
 # call would even construct. Build the real one — no network, no account.
-for field, value in R2_ENV.items():
+for field, value in BUCKET_ENV.items():
     setattr(settings, field, value)
 storage._client = None
 try:
@@ -184,11 +188,16 @@ else:
     try:
         client = storage._get_client()
         check("สร้าง boto3 client ของจริงได้ (ไม่ต่อเน็ต)",
-              client.meta.endpoint_url == R2_ENV["r2_endpoint_url"],
+              client.meta.endpoint_url == BUCKET_ENV["s3_endpoint_url"],
               client.meta.endpoint_url)
-        check("เซ็นแบบ SigV4 ตามที่ R2 ต้องการ",
+        check("เซ็นแบบ SigV4",
               client.meta.config.signature_version == "s3v4",
               client.meta.config.signature_version)
+        check("เซ็นด้วย region จริง ไม่ใช่ auto (Supabase ปฏิเสธถ้าไม่ตรง)",
+              client.meta.region_name == "ap-southeast-1", client.meta.region_name)
+        check("ใช้ path-style (bucket อยู่ใน path ไม่ใช่ชื่อโฮสต์)",
+              client.meta.config.s3.get("addressing_style") == "path",
+              client.meta.config.s3)
     except Exception as exc:
         check("สร้าง boto3 client ของจริงได้ (ไม่ต่อเน็ต)", False, repr(exc))
 storage._client = None

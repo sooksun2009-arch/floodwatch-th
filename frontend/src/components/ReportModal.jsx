@@ -141,8 +141,8 @@ export default function ReportModal({ open, onClose, initialPoint, onSubmitted }
             <h3 className="text-lg font-bold">ขอบคุณที่ช่วยแจ้งครับ</h3>
             <p className="mt-2 text-sm text-slate-400">
               {done.status === 'approved'
-                ? 'รายงานขึ้นแผนที่แล้ว'
-                : 'รายงานเข้าคิวตรวจสอบแล้ว ปกติใช้เวลาไม่เกิน 15 นาทีก่อนขึ้นแผนที่'}
+                ? 'รายงานขึ้นแผนที่แล้ว คนที่กำลังจะผ่านเส้นทางนี้เห็นได้ทันที'
+                : 'รายงานเข้าคิวตรวจสอบแล้ว — ถ้ามีคนแจ้งจุดเดียวกันอีกราย จะขึ้นแผนที่เองทันที'}
             </p>
             <button className="btn-primary mt-5 w-full" onClick={onClose}>
               ปิด
@@ -306,7 +306,7 @@ export default function ReportModal({ open, onClose, initialPoint, onSubmitted }
 
               <div>
                 <label className="label" htmlFor="photo">
-                  รูปถ่าย (ช่วยให้อนุมัติเร็วขึ้นมาก)
+                  รูปถ่าย (แนบรูปแล้วขึ้นแผนที่ทันที)
                 </label>
                 <input
                   id="photo"

@@ -153,6 +153,10 @@ class ReportOut(ORMModel):
     dispute_count: int
     confidence: float | None = None
     age_minutes: int | None = None
+    # On the map but never seen by a person. A flag rather than the moderation
+    # note itself, because that field holds whatever a moderator typed and this
+    # schema is what the public map endpoint returns.
+    auto_approved: bool = False
     camera_id: str | None
     created_at: datetime
     updated_at: datetime

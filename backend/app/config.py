@@ -27,6 +27,25 @@ class Settings(BaseSettings):
     require_moderation: bool = True
     allow_anonymous_reports: bool = True
 
+    # --- Automatic approval ---
+    # A queue guarded by one person fails at exactly the wrong moment: the night
+    # it floods is the night reports arrive fastest and the moderator is asleep,
+    # and a report nobody can see helps nobody. These two rules let a report go
+    # live on its own when the evidence is strong enough that holding it back
+    # costs more than it protects. Set both false to require a human every time.
+    #
+    # The asymmetry that justifies this: a flood pin that turns out to be wrong
+    # costs a driver a detour, while a real one held in a queue can send them
+    # into water they cannot see the depth of.
+    auto_approve_with_photo: bool = True
+    auto_approve_corroborated: bool = True
+    # How close and how recent another person's report must be to count as
+    # corroboration. 300 m keeps it to the same stretch of road rather than the
+    # neighbourhood, and 6 hours is short enough that the water has probably not
+    # drained in between.
+    auto_approve_radius_m: int = 300
+    auto_approve_window_hours: int = 6
+
     # --- Route checking (the primary feature) ---
     # Any OSRM-compatible server. The public demo host is fine for development
     # but rate-limited and not for production — self-host osrm-backend with a

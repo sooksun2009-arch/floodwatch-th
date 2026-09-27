@@ -22,7 +22,11 @@ function Queue() {
     api
       .queue()
       .then((data) => {
-        setItems(data.items || [])
+        const rows = data.items || []
+        // Unreviewed first — on a busy night these are the only rows on this
+        // screen that still need a decision, and they would otherwise sink
+        // under dozens already checked.
+        setItems([...rows].sort((a, b) => Number(b.auto_approved) - Number(a.auto_approved)))
         setError(null)
       })
       .catch(() => setError('โหลดคิวไม่สำเร็จ'))
@@ -65,7 +69,14 @@ function Queue() {
           <div key={report.id} className="card p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <p className="font-semibold">{report.place || 'ไม่ระบุจุด'}</p>
+                <p className="font-semibold">
+                  {report.place || 'ไม่ระบุจุด'}
+                  {report.auto_approved && (
+                    <span className="ml-2 rounded-md border border-amber-700 bg-amber-950/50 px-1.5 py-0.5 align-middle text-xs font-normal text-amber-300">
+                      ขึ้นเอง · ยังไม่มีคนตรวจ
+                    </span>
+                  )}
+                </p>
                 <p className="text-sm" style={{ color: LEVELS[report.level]?.color }}>
                   {report.level_label || levelLabel(report.level)}
                   {report.depth_cm ? ` · ${report.depth_cm} ซม.` : ''}
@@ -173,6 +184,8 @@ function LiveReports() {
     }
   }
 
+  const unreviewed = items.filter((item) => item.auto_approved).length
+
   if (loading) return <p className="py-8 text-center text-slate-400">กำลังโหลด…</p>
 
   return (
@@ -184,7 +197,12 @@ function LiveReports() {
       )}
 
       <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-400">ขึ้นแผนที่อยู่ {items.length} รายการ</p>
+        <p className="text-sm text-slate-400">
+          ขึ้นแผนที่อยู่ {items.length} รายการ
+          {unreviewed > 0 && (
+            <span className="text-amber-300"> · ยังไม่มีคนตรวจ {unreviewed}</span>
+          )}
+        </p>
         <button onClick={load} className="btn-ghost text-sm">
           รีเฟรช
         </button>
@@ -194,7 +212,8 @@ function LiveReports() {
         <div className="card p-8 text-center">
           <p className="text-slate-400">ยังไม่มีรายงานบนแผนที่</p>
           <p className="mt-1 text-xs text-slate-500">
-            รายงานที่ผ่านการอนุมัติแล้วจะมาแสดงที่นี่ ให้ถอนออกได้ถ้าพบว่าไม่ถูกต้อง
+            รายงานที่ขึ้นแผนที่แล้วจะมาแสดงที่นี่ ทั้งที่คุณอนุมัติเองและที่ระบบให้ขึ้นอัตโนมัติ
+            (แนบรูป หรือมีคนแจ้งจุดเดียวกันตั้งแต่ 2 ราย) ถอนออกได้ถ้าพบว่าไม่ถูกต้อง
           </p>
         </div>
       ) : (

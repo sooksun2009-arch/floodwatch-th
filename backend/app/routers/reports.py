@@ -14,8 +14,9 @@ from ..schemas import (
     ReportIn, ReportListOut, ReportOut, ReportUpdateIn, VoteIn,
 )
 from ..services import (
-    apply_vote_side_effects, expire_stale_reports, initial_status, log_action,
-    recount_votes, report_to_out, resolve_province, since_cutoff,
+    apply_vote_side_effects, auto_approval, expire_stale_reports, initial_status,
+    log_action, promote_report, recount_votes, report_to_out, resolve_province,
+    since_cutoff,
 )
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
@@ -135,6 +136,23 @@ def create_report(payload: ReportIn, request: Request, db: Session = Depends(get
         province = resolve_province(db, payload.lat, payload.lng)
         province_id = province.id if province else None
 
+    ip = client_ip(request)
+    report_status = initial_status(source, is_official)
+    auto_note: str | None = None
+    also_promote: list[FloodReport] = []
+
+    if report_status == ReportStatus.pending.value:
+        # Would have waited for a moderator. See whether the evidence clears it
+        # on its own — a photo, or a second witness at the same spot.
+        approved, auto_note, also_promote = auto_approval(
+            db, payload.lat, payload.lng,
+            photo_url=payload.photo_url,
+            reporter_id=user.id if user else None,
+            reporter_ip=ip,
+        )
+        if approved:
+            report_status = ReportStatus.approved.value
+
     report = FloodReport(
         lat=payload.lat, lng=payload.lng,
         province_id=province_id,
@@ -146,15 +164,26 @@ def create_report(payload: ReportIn, request: Request, db: Session = Depends(get
         description=payload.description,
         photo_url=payload.photo_url,
         source=source,
-        status=initial_status(source, is_official),
+        status=report_status,
+        moderation_note=auto_note,
         reporter_id=user.id if user else None,
         reporter_name=(user.display_name or user.username) if user else payload.reporter_name,
-        reporter_ip=client_ip(request),
+        reporter_ip=ip,
         expires_at=FloodReport.default_expiry(),
     )
     db.add(report)
     log_action(db, user, "create_report", "report", report.id,
                f"{level} @ {payload.place or ''} ({payload.lat:.5f},{payload.lng:.5f})")
+    if auto_note:
+        log_action(db, None, "auto_approve_report", "report", report.id, auto_note)
+
+    # The new witness corroborates the earlier reports as much as they clear it,
+    # so anything still queued at the same spot goes up with it.
+    for other in also_promote:
+        promote_report(other, "ขึ้นแผนที่อัตโนมัติ: มีผู้แจ้งจุดเดียวกันเพิ่มอีกราย")
+        log_action(db, None, "auto_approve_report", "report", other.id,
+                   "ได้รับการยืนยันจากรายงานใหม่ในจุดเดียวกัน")
+
     db.commit()
     db.refresh(report)
     return report_to_out(report)

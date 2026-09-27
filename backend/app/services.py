@@ -5,7 +5,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from .config import settings
-from .geo import haversine_km
+from .geo import bbox_around, haversine_km
 from .models import (
     Area, AuditLog, Camera, FloodReport, LEVEL_RANK, LEVEL_TH, ReportSource,
     ReportStatus, STATION_SITUATION_TH, User, WaterStation, utcnow,
@@ -55,6 +55,9 @@ def report_to_out(report: FloodReport) -> ReportOut:
     out.province_name = report.province.name_th if report.province else None
     out.confidence = report_confidence(report)
     out.age_minutes = age_minutes(report)
+    out.auto_approved = (report.status == ReportStatus.approved.value
+                         and report.moderated_by is None
+                         and report.source == ReportSource.user.value)
     return out
 
 
@@ -188,6 +191,90 @@ def initial_status(source: str, is_trusted_reporter: bool) -> str:
     if is_trusted_reporter or not settings.require_moderation:
         return ReportStatus.approved.value
     return ReportStatus.pending.value
+
+
+def corroborating_reports(
+    db: Session, lat: float, lng: float, *,
+    reporter_id: str | None = None,
+    reporter_ip: str | None = None,
+    exclude_id: str | None = None,
+) -> list[FloodReport]:
+    """Recent nearby reports of the same flood, filed by somebody else.
+
+    "Somebody else" carries the whole weight here. Without it, one person
+    filing the same puddle twice would approve their own report — precisely the
+    thing the moderation queue exists to catch — so a report is only ever
+    corroborated by a different account, or by a different IP when anonymous.
+    """
+    cutoff = utcnow() - timedelta(hours=max(1, settings.auto_approve_window_hours))
+    radius_km = max(1, settings.auto_approve_radius_m) / 1000.0
+    min_lat, min_lng, max_lat, max_lng = bbox_around(lat, lng, radius_km)
+
+    rows = db.execute(
+        select(FloodReport).where(
+            FloodReport.status.in_([ReportStatus.approved.value,
+                                    ReportStatus.pending.value]),
+            FloodReport.created_at >= cutoff,
+            FloodReport.lat.between(min_lat, max_lat),
+            FloodReport.lng.between(min_lng, max_lng),
+        )
+    ).scalars().all()
+
+    found: list[FloodReport] = []
+    for row in rows:
+        if exclude_id and row.id == exclude_id:
+            continue
+        # Same logged-in person, or same anonymous origin — not a second witness.
+        if reporter_id and row.reporter_id == reporter_id:
+            continue
+        if reporter_id is None and reporter_ip and row.reporter_ip == reporter_ip:
+            continue
+        if haversine_km(lat, lng, row.lat, row.lng) > radius_km:
+            continue
+        found.append(row)
+    return found
+
+
+def auto_approval(
+    db: Session, lat: float, lng: float, *,
+    photo_url: str | None = None,
+    reporter_id: str | None = None,
+    reporter_ip: str | None = None,
+    exclude_id: str | None = None,
+) -> tuple[bool, str | None, list[FloodReport]]:
+    """Decide whether a would-be pending report can go live unattended.
+
+    Returns (approved, note explaining why, reports to promote alongside it).
+
+    That third value matters: when a second witness turns up, the first
+    person's report is corroborated too, and leaving it in the queue would hide
+    the very evidence that just cleared the new one.
+    """
+    if settings.auto_approve_corroborated:
+        others = corroborating_reports(db, lat, lng, reporter_id=reporter_id,
+                                       reporter_ip=reporter_ip, exclude_id=exclude_id)
+        if others:
+            note = (f"ขึ้นแผนที่อัตโนมัติ: มีผู้แจ้งจุดใกล้เคียงอีก {len(others)} ราย "
+                    f"ภายใน {settings.auto_approve_window_hours} ชม. "
+                    f"(รัศมี {settings.auto_approve_radius_m} ม.)")
+            pending = [r for r in others if r.status == ReportStatus.pending.value]
+            return True, note, pending
+
+    if settings.auto_approve_with_photo and photo_url:
+        return True, "ขึ้นแผนที่อัตโนมัติ: แจ้งพร้อมรูปถ่าย", []
+
+    return False, None, []
+
+
+def promote_report(report: FloodReport, note: str) -> None:
+    """Put a report on the map without a moderator, leaving the reason behind.
+
+    moderated_by stays null on purpose: these rows are still unreviewed, and the
+    admin list has to be able to tell them apart from ones a person approved.
+    """
+    report.status = ReportStatus.approved.value
+    report.moderation_note = note
+    report.updated_at = utcnow()
 
 
 def since_cutoff(hours: int) -> datetime:

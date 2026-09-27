@@ -37,6 +37,20 @@ services:
       - key: ALLOW_ANONYMOUS_REPORTS
         value: "true"
 
+      # A moderation queue with one person behind it goes dark exactly when it
+      # matters — the night it floods. These let a report onto the map on its
+      # own when it carries a photo, or when a second person reports the same
+      # spot. Listed here so they can be switched off from the dashboard
+      # without a redeploy.
+      - key: AUTO_APPROVE_WITH_PHOTO
+        value: "true"
+      - key: AUTO_APPROVE_CORROBORATED
+        value: "true"
+      - key: AUTO_APPROVE_RADIUS_M
+        value: "300"
+      - key: AUTO_APPROVE_WINDOW_HOURS
+        value: "6"
+
       # Gauge stations: sync on boot, then keep fresh with a cron hitting
       # POST /api/stations/sync.
       - key: SYNC_STATIONS_ON_START

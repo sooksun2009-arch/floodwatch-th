@@ -8,7 +8,10 @@ os.environ["GEOCODE_ENABLED"] = "false"
 os.environ["SEED_DEMO_DATA"] = "false"
 os.environ["SYNC_STATIONS_ON_START"] = "false"
 
-from app.bma_stations import parse_detail, parse_summary, to_record, _parse_thai_datetime
+from app.bma_stations import (
+    describe_connection_failure, parse_detail, parse_summary, to_record,
+    _parse_thai_datetime,
+)
 
 fails = []
 def check(name, cond, extra=""):
@@ -101,6 +104,41 @@ check("ขัดข้อง -> บอกผู้ใช้ตรง ๆ", r2["s
 
 check("ไม่มีพิกัด -> ข้ามสถานี", to_record(rows[0], {"bank_level": 0.45}) is None)
 check("ตารางว่าง -> ไม่พัง", parse_summary("<table></table>") == [])
+
+# ---------------------------------------------------------------- diagnostics
+# "ConnectError: " with an empty message was the entire error text for the
+# failure that kept Bangkok off the live map, and it cannot tell a name that
+# would not resolve from a connection that was refused.
+import socket
+import httpx
+
+try:
+    try:
+        raise socket.gaierror(-2, "Name or service not known")
+    except Exception as inner:
+        raise httpx.ConnectError("") from inner
+except Exception as exc:
+    text = describe_connection_failure(exc)
+check("ข้อความแสดงสาเหตุจริง ไม่ใช่แค่ชื่อประเภท", "gaierror" in text, text)
+check("บอกรายละเอียดที่แปลงชื่อโดเมนไม่ได้", "Name or service" in text, text)
+check("ยังบอกประเภทชั้นนอกไว้ด้วย", text.startswith("ConnectError"), text)
+
+try:
+    raise httpx.ConnectTimeout("timed out")
+except Exception as exc:
+    text = describe_connection_failure(exc)
+check("หมดเวลาเชื่อมต่อ -> แยกออกจากกรณี DNS ได้",
+      "ConnectTimeout" in text and "timed out" in text, text)
+
+
+class _Loop(Exception):
+    pass
+
+a, b = _Loop("a"), _Loop("b")
+a.__cause__ = b
+b.__cause__ = a
+check("สาเหตุวนกันเอง -> ไม่ค้างลูป", describe_connection_failure(a).count("<-") == 1,
+      describe_connection_failure(a))
 
 print()
 print("=" * 60)

@@ -253,6 +253,24 @@ def ingest(db: Session, summary_html: str,
     return result
 
 
+def describe_connection_failure(exc: BaseException) -> str:
+    """A failure string that names the cause instead of its category.
+
+    httpx wraps the underlying socket error and often carries no message of its
+    own, so the chain has to be walked to find the one that knows what actually
+    happened.
+    """
+    parts: list[str] = []
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        text = str(current).strip()
+        parts.append(f"{type(current).__name__}({text})" if text else type(current).__name__)
+        current = current.__cause__ or current.__context__
+    return " <- ".join(parts)
+
+
 async def _fetch(client: httpx.AsyncClient, url: str) -> str:
     resp = await client.get(url, headers={"User-Agent": settings.http_user_agent})
     resp.raise_for_status()
@@ -295,8 +313,16 @@ async def sync(db: Session) -> dict:
                 await asyncio.sleep(settings.bma_detail_delay_sec)
 
     except (httpx.HTTPError, ValueError) as exc:
-        logger.warning("ซิงก์สถานี กทม. ไม่สำเร็จ: %s", exc)
-        return {"ok": False, "error": f"{type(exc).__name__}: {exc}",
+        # Spell the failure out. The first version logged "ConnectError: " with
+        # an empty message, which says only that something went wrong before
+        # any HTTP happened — it cannot distinguish a name that would not
+        # resolve from a refused connection from a handshake that timed out,
+        # and those have completely different fixes. The site itself is
+        # reachable from outside Thailand, so whatever stops this container is
+        # worth naming precisely rather than guessing at.
+        detail = describe_connection_failure(exc)
+        logger.warning("ซิงก์สถานี กทม. ไม่สำเร็จ: %s", detail)
+        return {"ok": False, "error": detail,
                 "created": 0, "updated": 0, "pending_detail": 0}
 
     return persist(db, rows, details, missing=missing, fetched=budget)

@@ -1,0 +1,110 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-slate-950 text-slate-100 font-sans antialiased;
+    /* Keep content clear of the iOS home indicator when pinned to the bottom. */
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* Inputs inherit the Thai font; 16px prevents iOS Safari zooming on focus. */
+  input,
+  select,
+  textarea,
+  button {
+    @apply font-sans;
+    font-size: 16px;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-slate-800 bg-slate-900/80 backdrop-blur;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5
+           font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-sky-600 text-white hover:bg-sky-500;
+  }
+  .btn-danger {
+    @apply btn bg-orange-600 text-white hover:bg-orange-500;
+  }
+  .btn-ghost {
+    @apply btn border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800;
+  }
+  .field {
+    @apply w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2.5
+           text-slate-100 placeholder-slate-500 outline-none
+           focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20;
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-slate-300;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium;
+  }
+}
+
+/* MapLibre's default controls are light; tone them down for the dark shell. */
+.maplibregl-ctrl-group {
+  background: rgb(15 23 42 / 0.92) !important;
+  border: 1px solid rgb(51 65 85) !important;
+}
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid rgb(51 65 85) !important;
+}
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(1);
+}
+.maplibregl-ctrl-attrib {
+  background: rgb(15 23 42 / 0.85) !important;
+  font-size: 10px;
+}
+.maplibregl-ctrl-attrib a {
+  color: rgb(148 163 184) !important;
+}
+.maplibregl-popup-content {
+  background: rgb(15 23 42) !important;
+  color: rgb(226 232 240) !important;
+  border: 1px solid rgb(51 65 85);
+  border-radius: 0.9rem !important;
+  padding: 0.85rem 1rem !important;
+  max-width: 17rem;
+}
+.maplibregl-popup-close-button {
+  color: rgb(148 163 184) !important;
+  font-size: 1.25rem;
+  padding: 0 0.4rem;
+}
+.maplibregl-popup-tip {
+  border-top-color: rgb(15 23 42) !important;
+  border-bottom-color: rgb(15 23 42) !important;
+}
+
+/* Marker pulse for the most severe live reports. */
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgb(220 38 38 / 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 14px rgb(220 38 38 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(220 38 38 / 0);
+  }
+}
+.marker-critical {
+  animation: pulse-ring 2s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marker-critical {
+    animation: none;
+  }
+}

@@ -1,0 +1,11 @@
+**/node_modules
+**/dist
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.env
+**/*.db
+backend/test_*.py
+backend/smoke_test.py
+backend/live_chat_*
+.git

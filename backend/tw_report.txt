@@ -1,0 +1,50 @@
+สถานีทั้งหมด: 805
+
+--- โครงสร้าง 1 แถว ---
+  id = 1313736250
+  waterlevel_datetime = 2026-09-27 10:10
+  waterlevel_m = None
+  waterlevel_msl = 351.38
+  waterlevel_msl_previous = 351.41
+  flow_rate = None
+  discharge = None
+  storage_percent = 170.76
+  sort_order = None
+  station_type = tele_waterlevel
+  situation_level = 5
+  agency: (dict)
+      id = 91
+      agency_name = {'th': 'มูลนิธิอาสาเพื่อนพึ่ง (ภาฯ) ยามยาก สภากาชาดไทย', 'en': 'Friend in Need (of “Pa”) Volunteers Foundation', 'jp': ''}
+      agency_shortname = {'th': 'พพภ', 'en': 'FOP', 'jp': ''}
+  basin: (dict)
+      id = 5
+      basin_code = 5
+      basin_name = {'th': 'ลุ่มน้ำมูล', 'en': 'Mun Basin'}
+  station: (dict)
+      id = 1394808
+      tele_station_name = {'en': 'Lam Takhong Nam Bridge', 'th': 'สะพานน้ำลำตะคอง'}
+      tele_station_lat = 14.550208
+      tele_station_long = 101.459465
+      tele_station_oldcode = MOU246
+      tele_station_type = tele_waterlevel
+      left_bank = 349.854
+      right_bank = 348.399
+      min_bank = 348.4
+      ground_level = 344.186
+      offset = None
+      sub_basin_id = 108
+      sponsor_by = มูลนิธิอาสาเพื่อนพึ่ง (ภาฯ) ยามยาก สภากาชาดไทย
+      agency_id = 91
+      geocode_id = 1919
+      hydro_id = None
+  geocode: (dict)
+      area_code = 4
+      area_name = {'th': 'ภาคตะวันออกเฉียงเหนือ', 'en': 'Northeast'}
+      amphoe_code = 21
+      amphoe_name = {'th': 'ปากช่อง', 'en': 'Pak Chong District'}
+      tumbon_code = 05
+      tumbon_name = {'th': 'หมูสี', 'en': 'Mu Si'}
+      province_code = 30
+      province_name = {'th': 'นครราชสีมา', 'en': 'Nakhon Ratchasima'}
+  diff_wl_bank = 2.98
+  diff_wl_bank_text = ล้นตลิ่ง (ม.)

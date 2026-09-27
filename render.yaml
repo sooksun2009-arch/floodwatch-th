@@ -1,0 +1,57 @@
+# Render blueprint — creates the service with every setting already in place.
+# In Render: New > Blueprint > pick this repo. Only DATABASE_URL is asked for.
+#
+# Free plan notes, both of which matter for how this app behaves:
+#   * The service sleeps after 15 minutes with no traffic and takes about a
+#     minute to wake. A cron ping every 10 minutes keeps it awake and fits
+#     inside the 750 free instance-hours a month.
+#   * There is no persistent disk, so uploaded photos are lost on every deploy.
+#     Reports keep their text, depth and position; only the image goes.
+services:
+  - type: web
+    name: floodwatch-th
+    runtime: docker
+    plan: free
+    region: singapore          # closest Render region to Thailand
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      # Render generates and stores this; it never appears in the repo.
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SEED_ADMIN_USERNAME
+        value: admin
+      # Set this yourself in the dashboard before the first deploy finishes —
+      # the seeder creates the admin account from it on first boot.
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+      # Postgres connection string from Neon (or any managed Postgres).
+      - key: DATABASE_URL
+        sync: false
+
+      - key: SEED_DEMO_DATA
+        value: "false"
+      - key: REQUIRE_MODERATION
+        value: "true"
+      - key: ALLOW_ANONYMOUS_REPORTS
+        value: "true"
+
+      # Gauge stations: sync on boot, then keep fresh with a cron hitting
+      # POST /api/stations/sync.
+      - key: SYNC_STATIONS_ON_START
+        value: "true"
+      - key: SYNC_BMA_ON_START
+        value: "true"
+
+      - key: GEOCODE_ENABLED
+        value: "true"
+      # Nominatim refuses requests whose User-Agent does not identify a real
+      # operator. Point this at the live URL once Render assigns it.
+      - key: HTTP_USER_AGENT
+        sync: false
+
+      # Free plan has no disk; keep uploads on the container's own filesystem
+      # and accept that they do not survive a deploy.
+      - key: UPLOAD_DIR
+        value: /tmp/uploads

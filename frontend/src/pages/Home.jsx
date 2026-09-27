@@ -10,6 +10,38 @@ import CameraModal from '../components/CameraModal'
 import ChatWidget from '../components/ChatWidget'
 import ReportModal from '../components/ReportModal'
 
+function SafetyNotice() {
+  // Permanent, not dismissible, and outside the map rather than floating over
+  // it. Someone opening this during a flood needs to know two things before
+  // they trust anything on the screen: nobody official stands behind it, and
+  // it cannot summon help. A notice they can tap away is a notice that is gone
+  // exactly when it matters.
+  //
+  // 1784 is the national disaster line; 1555 only answers for Bangkok, and
+  // this map covers the whole country.
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-amber-900/60 bg-amber-950/30 px-3 py-2 text-xs text-amber-100/90">
+      <span>
+        แอปนี้ทำโดยบุคคลทั่วไป <strong className="text-amber-200">ไม่ใช่หน่วยงานราชการ</strong>{' '}
+        และไม่ใช่ช่องทางขอความช่วยเหลือ
+      </span>
+      <span className="ml-auto flex items-center gap-1.5 whitespace-nowrap">
+        <span className="text-amber-200/70">เหตุด่วน</span>
+        <a
+          href="tel:1784"
+          className="rounded-lg bg-amber-600 px-2 py-0.5 font-semibold text-white hover:bg-amber-500"
+        >
+          โทร 1784
+        </a>
+        <span className="text-amber-200/70">ปภ. · ในกรุงเทพฯ</span>
+        <a href="tel:1555" className="font-semibold text-amber-200 underline">
+          1555
+        </a>
+      </span>
+    </div>
+  )
+}
+
 function Legend() {
   // On a phone the full key covers a third of the map and sits over marker
   // popups, so it starts collapsed there and expanded on a wider screen.
@@ -91,6 +123,7 @@ export default function Home() {
   const [origin, setOrigin] = useState(null)
   const [destination, setDestination] = useState(null)
   const [picking, setPicking] = useState(null)
+  const [mapCenter, setMapCenter] = useState(null)
 
   const [activeCamera, setActiveCamera] = useState(null)
   const [chatOpen, setChatOpen] = useState(false)
@@ -149,20 +182,36 @@ export default function Home() {
     [cameras],
   )
 
-  const onMapClick = useCallback(
+  const usePoint = useCallback(
     (point) => {
+      if (!point) return
+      const label = `หมุด ${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`
       if (picking === 'origin') {
         setOrigin(point)
-        setOriginText(`หมุด ${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`)
-        setPicking(null)
+        setOriginText(label)
       } else if (picking === 'destination') {
         setDestination(point)
-        setDestinationText(`หมุด ${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`)
-        setPicking(null)
+        setDestinationText(label)
+      } else if (picking === 'report') {
+        setReportPoint(point)
+        setReportOpen(true)
       }
+      setPicking(null)
     },
     [picking],
   )
+
+  // Tapping the map still works, and on a desktop with a mouse it is the
+  // quickest way. It is not offered as the only way, because on a phone a tap
+  // lands on a pin or a route line far more often than on bare map.
+  const onMapClick = useCallback(
+    (point) => {
+      if (picking) usePoint(point)
+    },
+    [picking, usePoint],
+  )
+
+  const PICK_LABEL = { origin: 'ต้นทาง', destination: 'ปลายทาง', report: 'จุดที่น้ำท่วม' }
 
   const showRouteOnMap = useCallback((route) => {
     setResult(route)
@@ -183,7 +232,8 @@ export default function Home() {
   return (
     <div className="mx-auto max-w-7xl gap-4 p-3 sm:p-4 lg:flex lg:items-start">
       <div className="lg:order-2 lg:flex-1">
-        <div className="relative h-[46vh] overflow-hidden rounded-2xl border border-slate-800 lg:sticky lg:top-20 lg:h-[calc(100vh-6rem)]">
+        <SafetyNotice />
+        <div className="relative h-[46vh] overflow-hidden rounded-2xl border border-slate-800 lg:sticky lg:top-20 lg:h-[calc(100vh-8.5rem)]">
           <Suspense
             fallback={
               <div className="flex h-full items-center justify-center text-sm text-slate-500">
@@ -201,6 +251,7 @@ export default function Home() {
               destination={destination}
               onCameraClick={openCamera}
               onMapClick={onMapClick}
+              onCenterChange={setMapCenter}
               onError={setMapError}
               pickMode={Boolean(picking)}
               fitKey={fitKey}
@@ -213,19 +264,61 @@ export default function Home() {
             </div>
           )}
           {picking && (
-            <div className="absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-full border border-sky-600 bg-sky-950/90 px-3.5 py-1.5 text-sm text-sky-200 backdrop-blur">
-              แตะบนแผนที่เพื่อปัก{picking === 'origin' ? 'ต้นทาง' : 'ปลายทาง'}
-            </div>
+            <>
+              {/* Pan the map under a fixed crosshair instead of tapping a
+                  spot. A tap on a phone usually lands on a pin or a route
+                  line, and then nothing happens and it looks broken — the
+                  crosshair cannot be missed and needs no aim. */}
+              <div
+                className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-full"
+                aria-hidden="true"
+              >
+                <svg width="34" height="44" viewBox="0 0 34 44" fill="none">
+                  <path
+                    d="M17 43C17 43 31 26.5 31 16.5C31 8.8 24.7 2.5 17 2.5S3 8.8 3 16.5C3 26.5 17 43 17 43Z"
+                    fill="#0ea5e9"
+                    stroke="#e0f2fe"
+                    strokeWidth="2.5"
+                  />
+                  <circle cx="17" cy="16.5" r="4.5" fill="#e0f2fe" />
+                </svg>
+              </div>
+              <div className="absolute left-1/2 top-3 z-10 w-[min(92%,26rem)] -translate-x-1/2 rounded-xl border border-sky-700 bg-sky-950/95 px-3 py-2 text-center text-sm text-sky-100 backdrop-blur">
+                เลื่อนแผนที่ให้หมุดอยู่ตรง{PICK_LABEL[picking]}
+                {mapCenter && (
+                  <span className="mt-0.5 block text-xs text-sky-300/80">
+                    {mapCenter.lat.toFixed(5)}, {mapCenter.lng.toFixed(5)}
+                  </span>
+                )}
+              </div>
+              <div className="absolute inset-x-3 bottom-3 z-10 flex gap-2">
+                <button
+                  onClick={() => setPicking(null)}
+                  className="rounded-xl border border-slate-600 bg-slate-900/95 px-4 py-3 text-sm text-slate-300 backdrop-blur hover:bg-slate-800"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  onClick={() => usePoint(mapCenter)}
+                  disabled={!mapCenter}
+                  className="flex-1 rounded-xl bg-sky-600 py-3 text-sm font-semibold text-white shadow-lg hover:bg-sky-500 disabled:opacity-50"
+                >
+                  ยืนยันตำแหน่งนี้
+                </button>
+              </div>
+            </>
           )}
-          <button
-            onClick={() => {
-              setReportPoint(null)
-              setReportOpen(true)
-            }}
-            className="absolute bottom-3 right-3 z-10 rounded-full bg-orange-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-950/50 hover:bg-orange-500"
-          >
-            แจ้งน้ำท่วม
-          </button>
+          {!picking && (
+            <button
+              onClick={() => {
+                setReportPoint(null)
+                setReportOpen(true)
+              }}
+              className="absolute bottom-3 right-3 z-10 rounded-full bg-orange-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-950/50 hover:bg-orange-500"
+            >
+              แจ้งน้ำท่วม
+            </button>
+          )}
         </div>
       </div>
 
@@ -311,6 +404,10 @@ export default function Home() {
         open={reportOpen}
         initialPoint={reportPoint}
         onClose={() => setReportOpen(false)}
+        onPickOnMap={() => {
+          setReportOpen(false)
+          setPicking('report')
+        }}
         onSubmitted={loadData}
       />
 

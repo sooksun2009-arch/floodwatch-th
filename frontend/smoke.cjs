@@ -113,6 +113,58 @@ const check = (name, ok, extra = '') => {
     console.log(`      หมุดที่วาด: ${JSON.stringify(state.layers)}`)
   }
 
+  // The safety notice is not dismissible and must be on the page from the
+  // start — someone opening this during a flood has to know before anything
+  // else that nobody official stands behind it and it cannot summon help.
+  const notice = await page.evaluate(() => document.body.innerText)
+  check('มีคำเตือนว่าไม่ใช่หน่วยงานราชการ', notice.includes('ไม่ใช่หน่วยงานราชการ'))
+  check('บอกว่าไม่ใช่ช่องทางขอความช่วยเหลือ', notice.includes('ไม่ใช่ช่องทางขอความช่วยเหลือ'))
+  const tels = await page.evaluate(() =>
+    [...document.querySelectorAll('a[href^="tel:"]')].map((a) => a.getAttribute('href')),
+  )
+  check('มีปุ่มโทรสายด่วนที่กดได้จริง', tels.includes('tel:1784'), JSON.stringify(tels))
+
+  // Placing a pin by panning the map under a crosshair, which replaced
+  // tap-to-place because a tap on a phone lands on a pin or a route line.
+  const clickByText = (text) =>
+    page.evaluate((needle) => {
+      const button = [...document.querySelectorAll('button')].find((b) =>
+        b.textContent.includes(needle),
+      )
+      if (!button) return false
+      button.click()
+      return true
+    }, text)
+
+  check('มีปุ่มแจ้งน้ำท่วม', await clickByText('แจ้งน้ำท่วม'))
+  await new Promise((r) => setTimeout(r, 400))
+  check('ฟอร์มมีปุ่ม "เลือกจุดบนแผนที่"', await clickByText('เลือกจุดบนแผนที่'))
+  await new Promise((r) => setTimeout(r, 500))
+
+  const picking = await page.evaluate(() => ({
+    prompt: document.body.innerText.includes('เลื่อนแผนที่ให้หมุดอยู่ตรง'),
+    crosshair: document.querySelectorAll('.pointer-events-none svg path').length > 0,
+    confirm: [...document.querySelectorAll('button')].some((b) =>
+      b.textContent.includes('ยืนยันตำแหน่งนี้'),
+    ),
+  }))
+  check('เข้าโหมดเลือกจุด: มีคำแนะนำ', picking.prompt, JSON.stringify(picking))
+  check('เข้าโหมดเลือกจุด: มีหมุดกลางจอ', picking.crosshair, JSON.stringify(picking))
+  check('เข้าโหมดเลือกจุด: มีปุ่มยืนยัน', picking.confirm, JSON.stringify(picking))
+
+  if (picking.confirm) {
+    await page.evaluate(() => window.__fwMap?.panBy([60, 40], { duration: 0 }))
+    await new Promise((r) => setTimeout(r, 400))
+    await clickByText('ยืนยันตำแหน่งนี้')
+    await new Promise((r) => setTimeout(r, 600))
+    const text = await page.evaluate(() => document.body.innerText)
+    check('ยืนยันแล้วกลับเข้าฟอร์มพร้อมพิกัด', text.includes('ปักหมุดแล้ว'),
+      text.slice(0, 200))
+  }
+  const closed = await clickByText('ปิด')
+  if (!closed) await page.keyboard.press('Escape')
+  await new Promise((r) => setTimeout(r, 400))
+
   // Click a flood pin and use the buttons on it. These moved onto the popup
   // because the map is how most people find a pin, and the only way to say
   // "the water has gone" used to be buried in the route results panel.

@@ -12,7 +12,7 @@ const LEVEL_HINT = {
   closed: 'เจ้าหน้าที่ปิดเส้นทาง หรือมีแผงกั้น',
 }
 
-export default function ReportModal({ open, onClose, initialPoint, onSubmitted }) {
+export default function ReportModal({ open, onClose, initialPoint, onPickOnMap, onSubmitted }) {
   const [point, setPoint] = useState(initialPoint || null)
   const [coordText, setCoordText] = useState('')
   const [coordNote, setCoordNote] = useState(null)
@@ -53,7 +53,7 @@ export default function ReportModal({ open, onClose, initialPoint, onSubmitted }
       },
       () => {
         setBusy(false)
-        setError('ระบุตำแหน่งไม่สำเร็จ — ปิดหน้าต่างนี้แล้วแตะบนแผนที่เพื่อปักหมุดแทนได้')
+        setError('ระบุตำแหน่งไม่สำเร็จ — กดปุ่ม “เลือกจุดบนแผนที่” ด้านล่างแทนได้')
       },
       { enableHighAccuracy: true, timeout: 10000 },
     )
@@ -174,9 +174,16 @@ export default function ReportModal({ open, onClose, initialPoint, onSubmitted }
                     ยังไม่ได้ระบุตำแหน่ง
                   </p>
                 )}
-                <button type="button" onClick={locate} className="btn-ghost mt-2 w-full text-sm">
-                  📍 ใช้ตำแหน่งปัจจุบันของฉัน
-                </button>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  <button type="button" onClick={locate} className="btn-ghost text-sm">
+                    📍 ใช้ตำแหน่งปัจจุบันของฉัน
+                  </button>
+                  {onPickOnMap && (
+                    <button type="button" onClick={onPickOnMap} className="btn-ghost text-sm">
+                      🗺️ เลือกจุดบนแผนที่
+                    </button>
+                  )}
+                </div>
 
                 <label className="label mt-3" htmlFor="coords">
                   หรือวางพิกัด / ลิงก์ Google Maps

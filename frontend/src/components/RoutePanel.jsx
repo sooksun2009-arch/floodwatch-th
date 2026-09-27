@@ -169,9 +169,18 @@ function HowTo({ onClose }) {
           <section className="rounded-xl border border-amber-900/60 bg-amber-950/30 p-3">
             <h4 className="font-semibold text-amber-200">ข้อจำกัดที่ต้องรู้</h4>
             <p className="mt-1 text-amber-100/80">
+              แอปนี้ทำโดยบุคคลทั่วไป <strong>ไม่ใช่หน่วยงานราชการ</strong>{' '}
+              และ<strong>ไม่ใช่ช่องทางขอความช่วยเหลือ</strong> ถ้าติดอยู่ในน้ำหรือต้องการ
+              ความช่วยเหลือ โทร <a href="tel:1784" className="underline">1784</a> (ปภ.)
+              หรือ <a href="tel:1555" className="underline">1555</a> ในกรุงเทพฯ
+            </p>
+            <p className="mt-2 text-amber-100/80">
               ระบบเห็นเฉพาะจุดที่มีผู้แจ้งหรือหน่วยงานรายงาน ไม่ใช่ทุกถนน
               &ldquo;ไปได้&rdquo; แปลว่ายังไม่มีใครแจ้ง ไม่ใช่การยืนยันว่าถนนแห้ง
               ตรวจกับภาพกล้องก่อนตัดสินใจเสมอ
+            </p>
+            <p className="mt-2 text-amber-100/80">
+              ถ้าเจอน้ำลึกกว่าที่คาดระหว่างทาง ให้กลับรถ อย่าฝืนขับต่อ
             </p>
           </section>
         </div>

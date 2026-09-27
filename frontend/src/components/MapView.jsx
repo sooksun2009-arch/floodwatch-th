@@ -217,6 +217,7 @@ export default function MapView({
   destination = null,
   onCameraClick,
   onMapClick,
+  onCenterChange,
   onError,
   pickMode = false,
   fitKey = null,
@@ -235,8 +236,8 @@ export default function MapView({
   const markersRef = useRef({ origin: null, destination: null })
   // Callbacks live in a ref so the map's event handlers always see the latest
   // ones without the map having to be torn down and rebuilt.
-  const handlersRef = useRef({ onCameraClick, onMapClick, onError })
-  handlersRef.current = { onCameraClick, onMapClick, onError }
+  const handlersRef = useRef({ onCameraClick, onMapClick, onCenterChange, onError })
+  handlersRef.current = { onCameraClick, onMapClick, onCenterChange, onError }
 
   useEffect(() => {
     if (mapRef.current) return undefined
@@ -543,6 +544,16 @@ export default function MapView({
 
       popup.setLngLat(event.lngLat).setDOMContent(root).addTo(map)
     })
+
+    // Where the crosshair is pointing. moveend rather than move: the centre
+    // only has to be right at the moment someone taps confirm, and they have
+    // to stop panning to do that.
+    const reportCentre = () => {
+      const centre = map.getCenter()
+      handlersRef.current.onCenterChange?.({ lat: centre.lat, lng: centre.lng })
+    }
+    reportCentre()
+    map.on('moveend', reportCentre)
 
     map.on('click', 'camera-dots', (event) => {
       const id = event.features?.[0]?.properties?.id

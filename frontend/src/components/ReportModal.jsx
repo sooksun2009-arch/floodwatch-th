@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, ApiError, LEVELS } from '../api'
+import { api, ApiError, LEVELS, parseCoords } from '../api'
 
 // Ordered worst-last so the picker reads like a rising scale.
 const LEVEL_ORDER = ['puddle', 'shallow', 'deep', 'severe', 'closed']
@@ -14,6 +14,8 @@ const LEVEL_HINT = {
 
 export default function ReportModal({ open, onClose, initialPoint, onSubmitted }) {
   const [point, setPoint] = useState(initialPoint || null)
+  const [coordText, setCoordText] = useState('')
+  const [coordNote, setCoordNote] = useState(null)
   const [level, setLevel] = useState('shallow')
   const [depth, setDepth] = useState('')
   const [place, setPlace] = useState('')
@@ -29,6 +31,8 @@ export default function ReportModal({ open, onClose, initialPoint, onSubmitted }
   useEffect(() => {
     if (open) {
       setPoint(initialPoint || null)
+      setCoordText('')
+      setCoordNote(null)
       setError(null)
       setDone(null)
     }
@@ -55,6 +59,23 @@ export default function ReportModal({ open, onClose, initialPoint, onSubmitted }
     )
   }
 
+  // Accept whatever the reporter pasted: a coordinate pair, the degrees form,
+  // or a Google Maps link. GPS alone is not enough — it fails indoors, on a
+  // desktop, and whenever someone reports a spot they are not standing at.
+  const readCoordText = (raw) => {
+    setCoordText(raw)
+    if (!raw.trim()) return setCoordNote(null)
+
+    const parsed = parseCoords(raw)
+    if (parsed) {
+      setPoint(parsed)
+      setCoordNote({ ok: true, text: `อ่านพิกัดได้: ${parsed.lat.toFixed(5)}, ${parsed.lng.toFixed(5)}` })
+      setError(null)
+    } else {
+      setCoordNote({ ok: false, text: 'ยังอ่านพิกัดไม่ได้ — ต้องเป็นพิกัดในประเทศไทย หรือลิงก์ที่มีพิกัดอยู่ข้างใน' })
+    }
+  }
+
   const pickPhoto = (event) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -67,7 +88,7 @@ export default function ReportModal({ open, onClose, initialPoint, onSubmitted }
 
   const submit = async (event) => {
     event.preventDefault()
-    if (!point) return setError('ต้องระบุตำแหน่งก่อน กดปุ่มใช้ตำแหน่งของฉัน หรือปักหมุดบนแผนที่')
+    if (!point) return setError('ต้องระบุตำแหน่งก่อน กดปุ่มใช้ตำแหน่งของฉัน วางพิกัด หรือปักหมุดบนแผนที่')
 
     setBusy(true)
     setError(null)
@@ -156,6 +177,29 @@ export default function ReportModal({ open, onClose, initialPoint, onSubmitted }
                 <button type="button" onClick={locate} className="btn-ghost mt-2 w-full text-sm">
                   📍 ใช้ตำแหน่งปัจจุบันของฉัน
                 </button>
+
+                <label className="label mt-3" htmlFor="coords">
+                  หรือวางพิกัด / ลิงก์ Google Maps
+                </label>
+                <input
+                  id="coords"
+                  className="field"
+                  value={coordText}
+                  onChange={(event) => readCoordText(event.target.value)}
+                  placeholder="13.68646, 100.63520 หรือวางลิงก์แผนที่"
+                  inputMode="text"
+                  autoComplete="off"
+                  spellCheck="false"
+                />
+                {coordNote && (
+                  <p className={`mt-1 text-xs ${coordNote.ok ? 'text-emerald-300' : 'text-amber-300'}`}>
+                    {coordNote.text}
+                  </p>
+                )}
+                <p className="mt-1 text-xs text-slate-500">
+                  ใน Google Maps กดค้างที่จุดนั้น แล้วแตะพิกัดที่ขึ้นมาเพื่อคัดลอก
+                  หรือกดแชร์แล้วคัดลอกลิงก์มาวางก็ได้
+                </p>
               </div>
 
               <div>

@@ -4,6 +4,7 @@ import { useAuth } from '../auth'
 
 const TABS = [
   ['queue', 'คิวตรวจสอบ'],
+  ['live', 'ที่ขึ้นแผนที่'],
   ['cameras', 'จัดการกล้อง'],
   ['import', 'นำเข้าข้อมูลหน่วยงาน'],
   ['audit', 'บันทึกการใช้งาน'],
@@ -127,6 +128,142 @@ function Queue() {
               >
                 ปฏิเสธ
               </button>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------- live reports
+
+function LiveReports() {
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [confirming, setConfirming] = useState(null)
+
+  const load = useCallback(() => {
+    setLoading(true)
+    api
+      .liveReports()
+      .then((data) => {
+        setItems(data.items || [])
+        setError(null)
+      })
+      .catch(() => setError('โหลดรายงานไม่สำเร็จ'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const withdraw = async (report) => {
+    try {
+      await api.moderate(report.id, {
+        status: 'rejected',
+        note: 'ถอนออกจากแผนที่โดยผู้ดูแล',
+      })
+      setItems((previous) => previous.filter((item) => item.id !== report.id))
+      setConfirming(null)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'ถอนรายงานไม่สำเร็จ')
+    }
+  }
+
+  if (loading) return <p className="py-8 text-center text-slate-400">กำลังโหลด…</p>
+
+  return (
+    <div className="space-y-3">
+      {error && (
+        <p className="rounded-xl border border-red-900 bg-red-950/50 px-3 py-2 text-sm text-red-300">
+          {error}
+        </p>
+      )}
+
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-slate-400">ขึ้นแผนที่อยู่ {items.length} รายการ</p>
+        <button onClick={load} className="btn-ghost text-sm">
+          รีเฟรช
+        </button>
+      </div>
+
+      {items.length === 0 ? (
+        <div className="card p-8 text-center">
+          <p className="text-slate-400">ยังไม่มีรายงานบนแผนที่</p>
+          <p className="mt-1 text-xs text-slate-500">
+            รายงานที่ผ่านการอนุมัติแล้วจะมาแสดงที่นี่ ให้ถอนออกได้ถ้าพบว่าไม่ถูกต้อง
+          </p>
+        </div>
+      ) : (
+        items.map((report) => (
+          <div key={report.id} className="card p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold">{report.place || 'ไม่ระบุจุด'}</p>
+                <p className="text-sm" style={{ color: LEVELS[report.level]?.color }}>
+                  {report.level_label || levelLabel(report.level)}
+                  {report.depth_cm ? ` · ${report.depth_cm} ซม.` : ''}
+                </p>
+                {report.description && (
+                  <p className="mt-1 text-sm text-slate-400">{report.description}</p>
+                )}
+                <p className="mt-1 text-xs text-slate-500">
+                  {[
+                    report.reporter_name || 'ไม่ระบุผู้แจ้ง',
+                    report.province_name,
+                    timeAgo(report.age_minutes),
+                    `ยืนยัน ${report.confirm_count} · แย้ง ${report.dispute_count}`,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+                <a
+                  className="mt-1 inline-block text-xs text-sky-400 hover:underline"
+                  href={`https://www.google.com/maps/search/?api=1&query=${report.lat},${report.lng}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  ดูพิกัดบนแผนที่
+                </a>
+              </div>
+              {report.photo_url && (
+                <img
+                  src={report.photo_url}
+                  alt="ภาพประกอบรายงาน"
+                  className="h-24 w-24 shrink-0 rounded-lg object-cover"
+                />
+              )}
+            </div>
+
+            <div className="mt-3">
+              {confirming === report.id ? (
+                // Taking a pin off a live flood map is worth one deliberate
+                // second — a mis-tap here hides a real hazard from drivers.
+                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-red-900 bg-red-950/40 p-3">
+                  <span className="text-sm text-red-200">
+                    ถอนรายงานนี้ออกจากแผนที่?
+                  </span>
+                  <button
+                    className="btn bg-red-700 text-sm text-white hover:bg-red-600"
+                    onClick={() => withdraw(report)}
+                  >
+                    ยืนยันถอน
+                  </button>
+                  <button className="btn-ghost text-sm" onClick={() => setConfirming(null)}>
+                    ยกเลิก
+                  </button>
+                </div>
+              ) : (
+                <button
+                  className="btn-ghost text-sm"
+                  onClick={() => setConfirming(report.id)}
+                >
+                  ถอนออกจากแผนที่
+                </button>
+              )}
             </div>
           </div>
         ))
@@ -618,6 +755,7 @@ export default function Admin() {
       </div>
 
       {tab === 'queue' && <Queue />}
+      {tab === 'live' && <LiveReports />}
       {tab === 'cameras' && <CameraAdmin />}
       {tab === 'import' && <ImportPanel />}
       {tab === 'audit' && <Audit />}

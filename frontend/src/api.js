@@ -118,6 +118,9 @@ export const api = {
   },
 
   queue: () => request('/api/admin/queue'),
+  // Moderators need to see what is live, not only what is waiting — taking a
+  // wrong report off the map matters more than approving a new one.
+  liveReports: () => request('/api/reports?limit=500'),
   moderate: (id, payload) =>
     request(`/api/admin/reports/${id}/moderate`, { method: 'POST', body: payload }),
   users: () => request('/api/admin/users'),
@@ -168,6 +171,61 @@ export const situationColor = (level) => SITUATIONS[level]?.color || '#64748b'
 
 export const levelColor = (level) => LEVELS[level]?.color || '#64748b'
 export const levelLabel = (level) => LEVELS[level]?.label || level || 'ไม่ระบุ'
+
+// ---------------------------------------------------------------- coordinates
+
+// Thailand's bounding box, so a pasted number from somewhere else is rejected
+// rather than dropping a flood pin in the wrong country.
+const TH_BOUNDS = { minLat: 5.4, maxLat: 20.6, minLng: 97.2, maxLng: 105.7 }
+
+const inThailand = (lat, lng) =>
+  lat >= TH_BOUNDS.minLat && lat <= TH_BOUNDS.maxLat &&
+  lng >= TH_BOUNDS.minLng && lng <= TH_BOUNDS.maxLng
+
+const dmsToDecimal = (deg, min, sec, hemisphere) => {
+  const value = Number(deg) + Number(min) / 60 + Number(sec) / 3600
+  return /[SW]/i.test(hemisphere) ? -value : value
+}
+
+/**
+ * Pull a coordinate pair out of whatever someone pasted.
+ *
+ * Mirrors the importer on the server, which was written against the shapes
+ * Thai agency reports actually use: a decimal pair, the degrees/minutes/seconds
+ * form Google Maps displays, and the several URL forms it produces when you
+ * copy a pin. Returns null when nothing usable is in there.
+ */
+export const parseCoords = (text) => {
+  if (!text) return null
+  const input = String(text).normalize('NFKC')
+
+  // 13°41'11.3"N 100°38'06.7"E
+  const dms = input.match(
+    /(\d{1,3})\s*[°d]\s*(\d{1,2})\s*['′]\s*([\d.]+)\s*["″]?\s*([NSns])[,\s]+(\d{1,3})\s*[°d]\s*(\d{1,2})\s*['′]\s*([\d.]+)\s*["″]?\s*([EWew])/,
+  )
+  if (dms) {
+    const lat = dmsToDecimal(dms[1], dms[2], dms[3], dms[4])
+    const lng = dmsToDecimal(dms[5], dms[6], dms[7], dms[8])
+    return inThailand(lat, lng) ? { lat, lng } : null
+  }
+
+  const patterns = [
+    /!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/,                                  // maps place data
+    /@(-?\d+\.\d+),(-?\d+\.\d+)/,                                      // /maps/@lat,lng,17z
+    /[?&](?:q|query|ll|destination)=(-?\d+\.\d+)%2C(-?\d+\.\d+)/i,     // url-encoded comma
+    /[?&](?:q|query|ll|destination)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/i,
+    /(-?\d{1,2}\.\d{3,})\s*,\s*(-?\d{2,3}\.\d{3,})/,                 // plain pair
+  ]
+  for (const pattern of patterns) {
+    const match = input.match(pattern)
+    if (match) {
+      const lat = Number(match[1])
+      const lng = Number(match[2])
+      if (inThailand(lat, lng)) return { lat, lng }
+    }
+  }
+  return null
+}
 
 export const timeAgo = (minutes) => {
   if (minutes == null) return ''

@@ -19,7 +19,7 @@ import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&ur
 
 setWorkerUrl(maplibreWorkerUrl)
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { LEVELS, SITUATIONS, levelLabel, safePhotoUrl, timeAgo } from '../api'
+import { LEVELS, SITUATIONS, api, levelLabel, safePhotoUrl, timeAgo } from '../api'
 
 // Raster OpenStreetMap tiles need no API key, which keeps the app free to run.
 // For production traffic, point VITE_MAP_STYLE at a tile provider you have an
@@ -109,6 +109,74 @@ const stationsToGeoJSON = (stations) => ({
   })),
 })
 
+const TREND_COLOR = {
+  rising: '#f59e0b',
+  falling: '#34d399',
+  steady: '#94a3b8',
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg'
+
+// A gap longer than this means the gauge stopped reporting, so the line is
+// broken there. Joining across it would draw a smooth climb the water may not
+// have made — the reading either side is real, the slope between them is not.
+const GAP_HOURS = 2
+
+/** Tiny time-accurate chart of the readings. Returns null if there is nothing to draw. */
+const sparkline = (points, direction) => {
+  const usable = (points || []).filter((p) => typeof p.value === 'number')
+  if (usable.length < 2) return null
+
+  const width = 176
+  const height = 40
+  const pad = 3
+  const times = usable.map((p) => new Date(p.at).getTime())
+  const values = usable.map((p) => p.value)
+  const t0 = times[0]
+  const tSpan = times[times.length - 1] - t0 || 1
+  const min = Math.min(...values)
+  const span = Math.max(...values) - min || 1
+
+  const x = (t) => pad + ((t - t0) / tSpan) * (width - pad * 2)
+  const y = (v) => height - pad - ((v - min) / span) * (height - pad * 2)
+
+  const svg = document.createElementNS(SVG_NS, 'svg')
+  svg.setAttribute('width', String(width))
+  svg.setAttribute('height', String(height))
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`)
+  svg.style.cssText = 'display:block;margin:.3rem 0'
+
+  const stroke = TREND_COLOR[direction] || TREND_COLOR.steady
+  let run = []
+  const flush = () => {
+    if (run.length > 1) {
+      const line = document.createElementNS(SVG_NS, 'polyline')
+      line.setAttribute('points', run.join(' '))
+      line.setAttribute('fill', 'none')
+      line.setAttribute('stroke', stroke)
+      line.setAttribute('stroke-width', '1.6')
+      line.setAttribute('stroke-linejoin', 'round')
+      line.setAttribute('stroke-linecap', 'round')
+      svg.appendChild(line)
+    }
+    run = []
+  }
+
+  usable.forEach((point, index) => {
+    if (index > 0 && times[index] - times[index - 1] > GAP_HOURS * 3600 * 1000) flush()
+    run.push(`${x(times[index]).toFixed(1)},${y(point.value).toFixed(1)}`)
+  })
+  flush()
+
+  const last = document.createElementNS(SVG_NS, 'circle')
+  last.setAttribute('cx', x(times[times.length - 1]).toFixed(1))
+  last.setAttribute('cy', y(values[values.length - 1]).toFixed(1))
+  last.setAttribute('r', '2.4')
+  last.setAttribute('fill', stroke)
+  svg.appendChild(last)
+  return svg
+}
+
 const routesToGeoJSON = (routes) => ({
   type: 'FeatureCollection',
   features: (routes || [])
@@ -157,6 +225,9 @@ export default function MapView({
   const containerRef = useRef(null)
   const mapRef = useRef(null)
   const readyRef = useRef(false)
+  // Identifies the popup a pending history request belongs to, so a slow reply
+  // cannot write last station's trend into the one now on screen.
+  const historyTokenRef = useRef(null)
   const markersRef = useRef({ origin: null, destination: null })
   // Callbacks live in a ref so the map's event handlers always see the latest
   // ones without the map having to be torn down and rebuilt.
@@ -378,6 +449,41 @@ export default function MapView({
       line(props.area, 'color:#94a3b8')
       line(props.agency ? `ข้อมูลโดย ${props.agency}` : '', 'color:#64748b;margin-top:.25rem')
       if (props.stale === 1) line('ข้อมูลไม่อัปเดต', 'color:#f59e0b;margin-top:.25rem')
+
+      // A level on its own does not say whether to turn around — the same
+      // number means opposite things depending on which way it is going. The
+      // history is a separate request, so the popup opens now and fills in.
+      const slot = document.createElement('div')
+      slot.style.cssText = 'margin-top:.4rem;color:#64748b'
+      slot.textContent = 'กำลังดูแนวโน้ม…'
+      root.appendChild(slot)
+
+      const token = Symbol('station-history')
+      historyTokenRef.current = token
+      api
+        .stationHistory(props.id)
+        .then((data) => {
+          // Another pin was clicked, or this popup closed, while we waited.
+          if (historyTokenRef.current !== token || !slot.isConnected) return
+          slot.textContent = ''
+          if (!data.available) {
+            slot.textContent = data.reason || 'ไม่มีข้อมูลย้อนหลัง'
+            return
+          }
+          const chart = sparkline(data.points, data.trend?.direction)
+          if (chart) slot.appendChild(chart)
+          if (data.trend) {
+            const label = document.createElement('div')
+            label.textContent = data.trend.label
+            label.style.cssText =
+              `color:${TREND_COLOR[data.trend.direction] || TREND_COLOR.steady};font-weight:600`
+            slot.appendChild(label)
+          }
+        })
+        .catch(() => {
+          if (historyTokenRef.current !== token || !slot.isConnected) return
+          slot.textContent = 'ดูแนวโน้มไม่สำเร็จ'
+        })
 
       popup.setLngLat(event.lngLat).setDOMContent(root).addTo(map)
     })

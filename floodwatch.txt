@@ -1,0 +1,11 @@
+postgresql://neondb_owner:npg_f98kUuQFSLOJ@ep-ancient-wildflower-b33hq6vo-pooler.c-4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+
+Lw*d8&8d!P*k%5f
+
+pass database supabase floodwatch :g7DsPtWBuP3K3l2G
+
+Access key ID:41aa386e0a38e667d439fc2bec9a703a
+
+Secret access key:76b74222c32a0a05463463109e0c430cbf7cffee9ed94f4629b2aa45a01f9f13
+
+render-floodwatch:41aa386e0a38e667d439fc2bec9a703a

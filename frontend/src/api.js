@@ -104,6 +104,7 @@ export const api = {
 
   stations: (params) => request(`/api/stations${qs(params)}`),
   stationSummary: () => request('/api/stations/summary'),
+  stationHistory: (id) => request(`/api/stations/${encodeURIComponent(id)}/history`),
   syncStations: () => request('/api/stations/sync', { method: 'POST' }),
 
   provinces: () => request('/api/areas/provinces'),

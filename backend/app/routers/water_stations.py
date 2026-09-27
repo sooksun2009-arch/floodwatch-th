@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..history import station_history
 from ..deps import require_moderator
 from ..geo import bbox_around, parse_bbox
 from ..models import STATION_SITUATION_TH, User, WaterStation
@@ -108,6 +109,33 @@ def summary(db: Session = Depends(get_db)):
         "by_situation": by_level,
         "last_synced_at": latest,
     }
+
+
+@router.get("/{station_id}/history", response_model=dict)
+async def history(station_id: str, db: Session = Depends(get_db),
+                  days: int = Query(default=2, ge=1, le=4)):
+    """Recent readings for one gauge, and which way the water is moving.
+
+    Fetched when someone opens a station rather than kept in sync for all of
+    them: 800 gauges polled on a timer would be 800 requests an hour at the
+    upstream for readings almost nobody looks at.
+    """
+    station = db.get(WaterStation, station_id)
+    if station is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "ไม่พบสถานีนี้")
+
+    if station.source != "thaiwater":
+        # Bangkok's own gauges publish history on a site that refuses
+        # connections from outside Thailand, so say so plainly instead of
+        # showing an empty chart that looks like the water is not moving.
+        return {"station_id": station.id, "name": station.name,
+                "source": station.source, "available": False,
+                "reason": "แหล่งข้อมูลนี้ยังไม่เปิดให้ดึงข้อมูลย้อนหลัง",
+                "points": [], "trend": None}
+
+    result = await station_history(station.external_id, days=days)
+    return {"station_id": station.id, "name": station.name,
+            "source": station.source, **result}
 
 
 @router.post("/sync", response_model=dict)

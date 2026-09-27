@@ -113,6 +113,60 @@ const check = (name, ok, extra = '') => {
     console.log(`      หมุดที่วาด: ${JSON.stringify(state.layers)}`)
   }
 
+  // Click a gauge and wait for its trend to arrive. The popup opens with a
+  // placeholder and fills in from a second request, so "the popup appeared" is
+  // not the same as "the trend works" — a broken fetch leaves the placeholder
+  // sitting there forever and everything else still passes.
+  if (state.layers && state.layers['station-dots'] > 0) {
+    const clicked = await page.evaluate(() => {
+      const map = window.__fwMap
+      const feature = map.queryRenderedFeatures({ layers: ['station-dots'] })[0]
+      if (!feature) return null
+      const point = map.project(feature.geometry.coordinates)
+      map.fire('click', {
+        lngLat: map.unproject(point),
+        point,
+        features: [feature],
+        originalEvent: new MouseEvent('click'),
+      })
+      return feature.properties.name || 'สถานี'
+    })
+    check('กดหมุดสถานีแล้วเปิด popup ได้', Boolean(clicked), 'ไม่พบหมุดสถานีให้กด')
+
+    if (clicked) {
+      let text = ''
+      for (let i = 0; i < 40; i++) {
+        text = await page.evaluate(
+          () => document.querySelector('.maplibregl-popup-content')?.textContent || '',
+        )
+        if (text && !text.includes('กำลังดูแนวโน้ม')) break
+        await new Promise((r) => setTimeout(r, 500))
+      }
+      check('popup แสดงชื่อสถานี', text.includes(clicked.slice(0, 8)), text.slice(0, 160))
+      check(
+        'แนวโน้มโหลดเสร็จ ไม่ค้างที่ "กำลังดูแนวโน้ม…"',
+        text && !text.includes('กำลังดูแนวโน้ม'),
+        text.slice(0, 200) || '(popup ว่าง)',
+      )
+      // "ไม่สำเร็จ" is deliberately NOT accepted here. A failed fetch is a
+      // legitimate thing for the page to say to a user, but in a smoke test it
+      // means the endpoint is missing or broken, which is the whole point of
+      // running this.
+      check(
+        'ดึงแนวโน้มสำเร็จ (ไม่ใช่ขึ้นว่าดึงไม่สำเร็จ)',
+        !/ไม่สำเร็จ/.test(text),
+        text.slice(0, 200),
+      )
+      const settled = /กำลังขึ้น|กำลังลง|ทรงตัว/.test(text) || /ไม่มีข้อมูล|ยังไม่/.test(text)
+      check('บอกแนวโน้ม หรือบอกตรง ๆ ว่าไม่มีข้อมูล', settled, text.slice(0, 200))
+      const svgs = await page.evaluate(
+        () => document.querySelectorAll('.maplibregl-popup-content svg polyline').length,
+      )
+      console.log(`      ข้อความใน popup: ${text.replace(/\s+/g, ' ').slice(0, 110)}`)
+      console.log(`      เส้นกราฟที่วาด: ${svgs}`)
+    }
+  }
+
   await page.screenshot({ path: 'smoke.png' })
   await browser.close()
 

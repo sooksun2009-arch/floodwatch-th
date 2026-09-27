@@ -113,6 +113,58 @@ const check = (name, ok, extra = '') => {
     console.log(`      หมุดที่วาด: ${JSON.stringify(state.layers)}`)
   }
 
+  // Click a flood pin and use the buttons on it. These moved onto the popup
+  // because the map is how most people find a pin, and the only way to say
+  // "the water has gone" used to be buried in the route results panel.
+  if (state.layers && state.layers['report-dots'] > 0) {
+    const opened = await page.evaluate(() => {
+      const map = window.__fwMap
+      const feature = map.queryRenderedFeatures({ layers: ['report-dots'] })[0]
+      if (!feature) return false
+      const point = map.project(feature.geometry.coordinates)
+      map.fire('click', {
+        lngLat: map.unproject(point), point, features: [feature],
+        originalEvent: new MouseEvent('click'),
+      })
+      return true
+    })
+    check('กดหมุดน้ำท่วมแล้วเปิด popup ได้', opened)
+
+    if (opened) {
+      const labels = await page.evaluate(() =>
+        [...document.querySelectorAll('.maplibregl-popup-content button')]
+          .map((b) => b.textContent.trim()),
+      )
+      check('popup มีปุ่ม "น้ำลดแล้ว"', labels.includes('น้ำลดแล้ว'), JSON.stringify(labels))
+      check('popup มีปุ่ม "ยังท่วมอยู่"', labels.includes('ยังท่วมอยู่'), JSON.stringify(labels))
+
+      const before = await page.evaluate(
+        () => document.querySelector('.maplibregl-popup-content').textContent,
+      )
+      await page.evaluate(() => {
+        const button = [...document.querySelectorAll('.maplibregl-popup-content button')]
+          .find((b) => b.textContent.trim() === 'น้ำลดแล้ว')
+        button?.click()
+      })
+      let after = before
+      for (let i = 0; i < 20; i++) {
+        after = await page.evaluate(
+          () => document.querySelector('.maplibregl-popup-content')?.textContent || '',
+        )
+        if (after.includes('ขอบคุณ') || after.includes('ไม่สำเร็จ')) break
+        await new Promise((r) => setTimeout(r, 400))
+      }
+      check('กด "น้ำลดแล้ว" แล้วส่งสำเร็จ', after.includes('ขอบคุณ'), after.slice(0, 180))
+      check(
+        'ตัวเลขแย้งเพิ่มขึ้นจริง หลังกด',
+        /แย้ง\s*[1-9]/.test(after),
+        `ก่อน: ${before.slice(0, 90)}
+         หลัง: ${after.slice(0, 90)}`,
+      )
+      console.log(`      popup หลังกด: ${after.replace(/\s+/g, ' ').slice(0, 120)}`)
+    }
+  }
+
   // Click a gauge and wait for its trend to arrive. The popup opens with a
   // placeholder and fills in from a second request, so "the popup appeared" is
   // not the same as "the trend works" — a broken fetch leaves the placeholder

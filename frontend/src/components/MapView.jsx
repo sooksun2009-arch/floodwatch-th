@@ -228,6 +228,10 @@ export default function MapView({
   // Identifies the popup a pending history request belongs to, so a slow reply
   // cannot write last station's trend into the one now on screen.
   const historyTokenRef = useRef(null)
+  // Pins this visitor has already voted on, so reopening one does not invite a
+  // second vote. The server allows changing a vote; this is only about not
+  // asking again.
+  const votedReportsRef = useRef(new Set())
   const markersRef = useRef({ origin: null, destination: null })
   // Callbacks live in a ref so the map's event handlers always see the latest
   // ones without the map having to be torn down and rebuilt.
@@ -404,7 +408,10 @@ export default function MapView({
       line(props.place, 'font-weight:700;margin-bottom:.15rem')
       line(props.label, `color:${LEVELS[props.level]?.color || '#94a3b8'};font-weight:600`)
       if (props.depth) line(`วัดได้ ${props.depth} ซม.`, 'color:#94a3b8')
-      line(`ยืนยัน ${props.confirms} · แย้ง ${props.disputes}`, 'color:#94a3b8')
+      const counts = document.createElement('div')
+      counts.textContent = `ยืนยัน ${props.confirms} · แย้ง ${props.disputes}`
+      counts.style.cssText = 'color:#94a3b8'
+      root.appendChild(counts)
       line(props.age, 'color:#64748b;margin-top:.25rem')
 
       // Only same-origin upload paths are rendered; an absolute URL from a
@@ -418,6 +425,55 @@ export default function MapView({
         image.style.cssText = 'margin-top:.5rem;border-radius:.5rem;width:100%'
         root.appendChild(image)
       }
+
+      // Until now these buttons lived only in the route results panel, so
+      // anyone who found a pin by looking at the map — most people — could see
+      // that a road was flooded three hours ago and had no way to say the
+      // water had gone. A stale pin sends drivers around a road that is fine,
+      // and the people best placed to clear it are the ones standing there.
+      const actions = document.createElement('div')
+      actions.style.cssText = 'display:flex;gap:.4rem;margin-top:.5rem;flex-wrap:wrap'
+      const buttonCss =
+        'border:1px solid #334155;border-radius:.5rem;padding:.25rem .55rem;' +
+        'font-size:12px;color:#cbd5e1;background:transparent;cursor:pointer'
+
+      const said = document.createElement('span')
+      said.style.cssText = 'font-size:12px;color:#34d399;align-self:center'
+
+      const castVote = (choice, button) => {
+        for (const node of actions.querySelectorAll('button')) node.disabled = true
+        api
+          .voteReport(props.id, choice)
+          .then((updated) => {
+            votedReportsRef.current.add(props.id)
+            counts.textContent =
+              `ยืนยัน ${updated.confirm_count} · แย้ง ${updated.dispute_count}`
+            said.textContent = choice === 'dispute'
+              ? 'ขอบคุณครับ — จะตรวจสอบให้'
+              : 'ขอบคุณครับ'
+          })
+          .catch((error) => {
+            for (const node of actions.querySelectorAll('button')) node.disabled = false
+            said.style.color = '#f59e0b'
+            said.textContent = error?.message || 'ส่งไม่สำเร็จ ลองใหม่อีกครั้ง'
+          })
+      }
+
+      for (const [text, choice] of [['ยังท่วมอยู่', 'confirm'], ['น้ำลดแล้ว', 'dispute']]) {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.textContent = text
+        button.style.cssText = buttonCss
+        button.addEventListener('click', () => castVote(choice, button))
+        actions.appendChild(button)
+      }
+      actions.appendChild(said)
+
+      if (votedReportsRef.current.has(props.id)) {
+        for (const node of actions.querySelectorAll('button')) node.disabled = true
+        said.textContent = 'ขอบคุณครับ'
+      }
+      root.appendChild(actions)
 
       popup.setLngLat(event.lngLat).setDOMContent(root).addTo(map)
     })

@@ -271,10 +271,39 @@ def describe_connection_failure(exc: BaseException) -> str:
     return " <- ".join(parts)
 
 
+# Waits between attempts, in seconds. Short, and only a few: this is someone
+# else's public web page and it rate-limits, so a burst of retries is more
+# likely to earn a block than to get an answer.
+RETRY_DELAYS = (2.0, 5.0)
+
+
 async def _fetch(client: httpx.AsyncClient, url: str) -> str:
-    resp = await client.get(url, headers={"User-Agent": settings.http_user_agent})
-    resp.raise_for_status()
-    return resp.text
+    """Fetch one page, retrying only failures that a retry could plausibly fix.
+
+    The fetch has been failing from the deployed container while the same URL
+    answers fine elsewhere, and the cause is not yet known. Retrying covers
+    every transient version of that — a nameserver that did not answer in
+    time, a connection dropped mid-handshake — without needing to know which
+    one it is. An HTTP status is not retried: a 403 is a decision, and asking
+    again immediately is how a decision becomes a longer one.
+    """
+    last: Exception | None = None
+    for attempt, delay in enumerate((0.0,) + RETRY_DELAYS):
+        if delay:
+            await asyncio.sleep(delay)
+        try:
+            resp = await client.get(url, headers={"User-Agent": settings.http_user_agent})
+            resp.raise_for_status()
+            if attempt:
+                logger.info("ดึง %s สำเร็จในครั้งที่ %s", url, attempt + 1)
+            return resp.text
+        except httpx.HTTPStatusError:
+            raise
+        except httpx.HTTPError as exc:
+            last = exc
+            logger.info("ดึง %s ไม่สำเร็จ (ครั้งที่ %s): %s",
+                        url, attempt + 1, describe_connection_failure(exc))
+    raise last  # type: ignore[misc]
 
 
 async def sync(db: Session) -> dict:

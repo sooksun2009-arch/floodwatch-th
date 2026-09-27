@@ -8,6 +8,7 @@ os.environ["GEOCODE_ENABLED"] = "false"
 os.environ["SEED_DEMO_DATA"] = "false"
 os.environ["SYNC_STATIONS_ON_START"] = "false"
 
+import app.bma_stations as bma
 from app.bma_stations import (
     describe_connection_failure, parse_detail, parse_summary, to_record,
     _parse_thai_datetime,
@@ -129,6 +130,43 @@ except Exception as exc:
     text = describe_connection_failure(exc)
 check("หมดเวลาเชื่อมต่อ -> แยกออกจากกรณี DNS ได้",
       "ConnectTimeout" in text and "timed out" in text, text)
+
+
+# ---------------------------------------------------------------- retrying
+import asyncio
+
+bma.RETRY_DELAYS = (0.0, 0.0)          # no real waiting inside the test
+
+
+def _run(handler):
+    calls = {"n": 0}
+
+    def wrapped(request):
+        calls["n"] += 1
+        return handler(request, calls["n"])
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(wrapped)) as client:
+            return await bma._fetch(client, "https://example.test/Summary")
+
+    try:
+        return asyncio.run(go()), calls["n"], None
+    except Exception as exc:
+        return None, calls["n"], exc
+
+
+text, n, err = _run(lambda r, i: httpx.Response(200, text="ok")
+                    if i > 1 else (_ for _ in ()).throw(httpx.ConnectError("")))
+check("ล้มครั้งแรกแล้วลองใหม่สำเร็จ", text == "ok" and n == 2, f"{text!r} calls={n} {err}")
+
+text, n, err = _run(lambda r, i: (_ for _ in ()).throw(httpx.ConnectError("")))
+check("ล้มทุกครั้ง -> หยุดที่ 3 ครั้ง ไม่วนไม่สิ้นสุด", n == 3, f"calls={n}")
+check("และโยน error ออกมาให้เห็น", isinstance(err, httpx.ConnectError), repr(err))
+
+text, n, err = _run(lambda r, i: httpx.Response(403, text="forbidden"))
+check("โดนปฏิเสธ 403 -> ไม่ยิงซ้ำ (ยิงซ้ำมีแต่จะโดนหนักขึ้น)", n == 1, f"calls={n}")
+check("และรายงานว่าเป็นเรื่องสถานะ ไม่ใช่เรื่องเชื่อมต่อ",
+      isinstance(err, httpx.HTTPStatusError), repr(err))
 
 
 class _Loop(Exception):

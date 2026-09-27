@@ -82,6 +82,10 @@ class Settings(BaseSettings):
     station_stale_hours: int = 6
     # Sync on boot so a fresh deploy has live data without waiting for a cron.
     sync_stations_on_start: bool = True
+    # Keep syncing on this interval from inside the app. Doing it in-process
+    # avoids needing an external scheduler and an API token just to keep water
+    # levels current. 0 syncs once at boot and then stops.
+    station_sync_interval_min: int = 15
     # A camera frame older than this marks the camera "stale" — agency snapshot
     # endpoints keep returning HTTP 200 long after the picture stops updating.
     camera_stale_minutes: int = 90

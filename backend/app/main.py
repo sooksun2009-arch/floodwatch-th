@@ -60,16 +60,33 @@ async def lifespan(app: FastAPI):
         from .stations import sync_all
 
         async def _sync_in_background() -> None:
-            db = SessionLocal()
-            try:
-                logger.info("เริ่มซิงก์สถานีเบื้องหลัง")
-                logger.info("ซิงก์สถานีเสร็จ: %s", await sync_all(db))
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.exception("ซิงก์สถานีตอนบูตล้มเหลว — แอปยังทำงานต่อได้")
-            finally:
-                db.close()
+            """Sync once at boot, then keep going on a timer.
+
+            Doing this in-process means no external cron, no scheduler service
+            and no API token to hand around just to keep the water levels
+            fresh. Every pass opens its own session so one failure cannot
+            poison the next.
+            """
+            first = True
+            while True:
+                if not first:
+                    await asyncio.sleep(max(1, settings.station_sync_interval_min) * 60)
+                first = False
+
+                db = SessionLocal()
+                try:
+                    logger.info("ซิงก์สถานี: เริ่ม")
+                    logger.info("ซิงก์สถานี: เสร็จ %s", await sync_all(db))
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("ซิงก์สถานีล้มเหลว — จะลองใหม่รอบหน้า")
+                finally:
+                    db.close()
+
+                if settings.station_sync_interval_min <= 0:
+                    logger.info("ปิดการซิงก์ซ้ำอัตโนมัติ (STATION_SYNC_INTERVAL_MIN=0)")
+                    return
 
         # Keep the reference: a bare create_task can be garbage collected mid-run.
         boot_sync = asyncio.create_task(_sync_in_background())

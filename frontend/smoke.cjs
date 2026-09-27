@@ -171,7 +171,10 @@ const check = (name, ok, extra = '') => {
   if (state.layers && state.layers['report-dots'] > 0) {
     const opened = await page.evaluate(() => {
       const map = window.__fwMap
-      const feature = map.queryRenderedFeatures({ layers: ['report-dots'] })[0]
+      const found = map.queryRenderedFeatures({ layers: ['report-dots'] })
+      // Prefer one with a photo: a tall portrait picture is what used to push
+      // the buttons under it off the bottom of the screen.
+      const feature = found.find((f) => f.properties.photo) || found[0]
       if (!feature) return false
       const point = map.project(feature.geometry.coordinates)
       map.fire('click', {
@@ -213,7 +216,34 @@ const check = (name, ok, extra = '') => {
         `ก่อน: ${before.slice(0, 90)}
          หลัง: ${after.slice(0, 90)}`,
       )
+      // The buttons are useless if a photo pushed them past the bottom edge.
+      const layout = await page.evaluate(() => {
+        const popup = document.querySelector('.maplibregl-popup-content')
+        const image = popup?.querySelector('img')
+        const button = [...popup.querySelectorAll('button')].find((b) =>
+          b.textContent.includes('น้ำลดแล้ว'),
+        )
+        const rect = button?.getBoundingClientRect()
+        return {
+          photoHeight: image ? Math.round(image.getBoundingClientRect().height) : null,
+          buttonBottom: rect ? Math.round(rect.bottom) : null,
+          viewport: window.innerHeight,
+        }
+      })
+      if (layout.photoHeight !== null) {
+        check(
+          'รูปในป๊อปอัปไม่สูงเกินเพดาน',
+          layout.photoHeight <= 200,
+          `สูง ${layout.photoHeight}px`,
+        )
+      }
+      check(
+        'ปุ่มโหวตอยู่ในจอ ไม่ถูกรูปดันตกขอบ',
+        layout.buttonBottom !== null && layout.buttonBottom <= layout.viewport,
+        JSON.stringify(layout),
+      )
       console.log(`      popup หลังกด: ${after.replace(/\s+/g, ' ').slice(0, 120)}`)
+      console.log(`      รูปสูง ${layout.photoHeight}px · ปุ่มอยู่ที่ ${layout.buttonBottom}/${layout.viewport}px`)
     }
   }
 

@@ -423,7 +423,15 @@ export default function MapView({
         image.src = photo
         image.alt = 'ภาพจุดน้ำท่วม'
         image.loading = 'lazy'
-        image.style.cssText = 'margin-top:.5rem;border-radius:.5rem;width:100%'
+        // Cap the height. A portrait photo — which is most phone photos —
+        // renders at full aspect ratio otherwise, and the popup grows until
+        // the buttons under it are off the bottom of the screen. The picture
+        // is there to judge the depth, not to be viewed full size.
+        image.style.cssText =
+          'margin-top:.5rem;border-radius:.5rem;width:100%;max-height:160px;' +
+          'object-fit:cover;cursor:zoom-in'
+        image.title = 'แตะเพื่อเปิดรูปเต็ม'
+        image.addEventListener('click', () => window.open(photo, '_blank', 'noopener'))
         root.appendChild(image)
       }
 

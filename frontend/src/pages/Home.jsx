@@ -11,31 +11,71 @@ import ChatWidget from '../components/ChatWidget'
 import ReportModal from '../components/ReportModal'
 
 function Legend() {
+  // On a phone the full key covers a third of the map and sits over marker
+  // popups, so it starts collapsed there and expanded on a wider screen.
+  const [open, setOpen] = useState(() => {
+    try {
+      return window.matchMedia('(min-width: 640px)').matches
+    } catch {
+      return false
+    }
+  })
+
   return (
-    <div className="pointer-events-none absolute bottom-3 left-3 z-10 rounded-xl border border-slate-700 bg-slate-950/85 p-2.5 text-xs backdrop-blur">
-      <p className="mb-1.5 font-semibold text-slate-300">ระดับน้ำ</p>
-      <ul className="space-y-1">
-        {Object.entries(LEVELS).map(([key, value]) => (
-          <li key={key} className="flex items-center gap-2 text-slate-400">
-            <span
-              className="h-2.5 w-2.5 rounded-full ring-1 ring-slate-900"
-              style={{ background: value.color }}
-            />
-            {value.short}
-          </li>
-        ))}
-        <li className="flex items-center gap-2 pt-1 text-slate-400">
-          <span className="h-2.5 w-2.5 rounded-full bg-sky-500 ring-2 ring-sky-100" />
-          กล้อง CCTV
-        </li>
-        <li className="flex items-center gap-2 text-slate-400">
-          <span
-            className="h-2.5 w-2.5 rounded-full ring-1 ring-slate-900"
-            style={{ background: SITUATIONS[5].color }}
-          />
-          คลองเฝ้าระวัง/วิกฤติ
-        </li>
-      </ul>
+    <div className="absolute bottom-3 left-3 z-10 max-w-[60vw]">
+      {open ? (
+        <div className="rounded-xl border border-slate-700 bg-slate-950/90 p-2.5 text-xs backdrop-blur">
+          <div className="mb-1.5 flex items-center justify-between gap-3">
+            <p className="font-semibold text-slate-300">ระดับน้ำ</p>
+            <button
+              onClick={() => setOpen(false)}
+              className="rounded px-1 text-sm leading-none text-slate-500 hover:text-slate-200"
+              aria-label="ย่อคำอธิบายสัญลักษณ์"
+            >
+              −
+            </button>
+          </div>
+          <ul className="space-y-1">
+            {Object.entries(LEVELS).map(([key, value]) => (
+              <li key={key} className="flex items-center gap-2 text-slate-400">
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-900"
+                  style={{ background: value.color }}
+                />
+                {value.short}
+              </li>
+            ))}
+            <li className="flex items-center gap-2 pt-1 text-slate-400">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-sky-500 ring-2 ring-sky-100" />
+              กล้อง CCTV
+            </li>
+            <li className="flex items-center gap-2 text-slate-400">
+              <span
+                className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-900"
+                style={{ background: SITUATIONS[5].color }}
+              />
+              คลองเฝ้าระวัง/วิกฤติ
+            </li>
+          </ul>
+        </div>
+      ) : (
+        <button
+          onClick={() => setOpen(true)}
+          className="flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-950/90 py-1.5 pl-2 pr-3 text-xs text-slate-300 backdrop-blur"
+        >
+          {/* A row of the actual marker colours reads as a key even collapsed. */}
+          <span className="flex -space-x-0.5">
+            {['puddle', 'shallow', 'deep', 'severe'].map((key) => (
+              <span
+                key={key}
+                className="h-2.5 w-2.5 rounded-full ring-1 ring-slate-950"
+                style={{ background: LEVELS[key].color }}
+              />
+            ))}
+          </span>
+          สัญลักษณ์
+        </button>
+      )}
     </div>
   )
 }

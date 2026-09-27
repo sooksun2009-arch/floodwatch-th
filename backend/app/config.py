@@ -103,9 +103,31 @@ class Settings(BaseSettings):
     cors_origins: str = "*"
 
 
+def _safe_header(value: str, fallback: str) -> str:
+    """Make a config string safe to send as an HTTP header value.
+
+    HTTP headers are latin-1 only. A Thai character, a stray newline or a tab
+    in HTTP_USER_AGENT makes h11 reject the request with LocalProtocolError —
+    and because that header goes on *every* outbound call, one bad character
+    silently takes down routing, geocoding and the gauge sync at once. That is
+    exactly what happened on the first production deploy, and no value an
+    operator types into a dashboard should be able to do it.
+    """
+    cleaned = " ".join((value or "").split())  # collapse newlines/tabs
+    try:
+        cleaned.encode("latin-1")
+    except UnicodeEncodeError:
+        cleaned = cleaned.encode("ascii", "ignore").decode("ascii").strip()
+    return cleaned or fallback
+
+
+DEFAULT_USER_AGENT = "FloodWatchTH/1.0 (flood alert app)"
+
+
 @lru_cache
 def get_settings() -> Settings:
     s = Settings()
+    s.http_user_agent = _safe_header(s.http_user_agent, DEFAULT_USER_AGENT)
     # Railway/Heroku hand out postgres:// which SQLAlchemy 2 no longer accepts.
     if s.database_url.startswith("postgres://"):
         s.database_url = s.database_url.replace("postgres://", "postgresql+psycopg://", 1)

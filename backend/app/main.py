@@ -1,4 +1,5 @@
 """FastAPI application. Serves the API and, in production, the built SPA."""
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -48,17 +49,30 @@ async def lifespan(app: FastAPI):
 
     os.makedirs(settings.upload_dir, exist_ok=True)
 
+    boot_sync: asyncio.Task | None = None
     if settings.sync_stations_on_start:
-        # Never let a slow or broken upstream stop the app from starting.
+        # Fire and forget. Awaiting this here would keep the app from serving
+        # until every upstream answered: the Bangkok source alone walks ~300
+        # station pages on a first run, which is minutes. A platform health
+        # check times out long before that and restarts the container, so the
+        # sync never finishes and the database stays empty — which is exactly
+        # what happened on the first deploy.
         from .stations import sync_all
-        db = SessionLocal()
-        try:
-            result = await sync_all(db)
-            logger.info("station sync on boot: %s", result)
-        except Exception:
-            logger.exception("station sync on boot failed — app continues without gauge data")
-        finally:
-            db.close()
+
+        async def _sync_in_background() -> None:
+            db = SessionLocal()
+            try:
+                logger.info("เริ่มซิงก์สถานีเบื้องหลัง")
+                logger.info("ซิงก์สถานีเสร็จ: %s", await sync_all(db))
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("ซิงก์สถานีตอนบูตล้มเหลว — แอปยังทำงานต่อได้")
+            finally:
+                db.close()
+
+        # Keep the reference: a bare create_task can be garbage collected mid-run.
+        boot_sync = asyncio.create_task(_sync_in_background())
     if settings.jwt_secret == "change-me-in-production":
         logger.warning("JWT_SECRET ยังเป็นค่าเริ่มต้น — ต้องตั้งค่าใหม่ก่อนใช้งานจริง")
     if "example.com" in settings.http_user_agent:
@@ -68,6 +82,13 @@ async def lifespan(app: FastAPI):
             "HTTP_USER_AGENT ยังเป็นค่าตัวอย่าง (example.com) — Nominatim จะปฏิเสธคำขอ "
             "ให้ตั้งเป็นที่อยู่ติดต่อจริง ระหว่างนี้ระบบจะใช้ Photon เป็นตัวสำรอง")
     yield
+
+    if boot_sync is not None and not boot_sync.done():
+        boot_sync.cancel()
+        try:
+            await boot_sync
+        except (asyncio.CancelledError, Exception):
+            pass
 
 
 app = FastAPI(

@@ -1,0 +1,116 @@
+"""Where uploaded flood photos live.
+
+Local disk by default. Point the R2_* settings at a Cloudflare R2 bucket (or any
+S3-compatible store) and photos go there instead, which is the only way they
+survive on a host with no persistent disk: on the free plan every deploy wipes
+the container's filesystem, so reports keep their text, depth and position while
+the picture — usually the most convincing part of the report — disappears.
+
+This module is also the single place that decides whether a photo URL is one of
+ours. `photo_url` arrives on the report payload as a plain string from whoever
+is filing, and it is rendered in an <img> on the moderation screen, so an
+unchecked value means anyone can make a moderator's browser fetch a URL of their
+choosing. Validating here rather than in the page keeps the rule in one place
+and keeps it enforced even if a future screen forgets to guard.
+"""
+import logging
+import os
+import re
+import threading
+
+from .config import settings
+
+logger = logging.getLogger("floodwatch.storage")
+
+# Exactly what save_jpeg() names a file: date, then a random hex id.
+UPLOAD_NAME = re.compile(r"^\d{8}-[0-9a-f]{12}\.jpg$")
+
+LOCAL_PREFIX = "/uploads/"
+
+_client_lock = threading.Lock()
+_client = None
+
+
+def r2_enabled() -> bool:
+    return bool(settings.r2_bucket and settings.r2_endpoint_url
+                and settings.r2_access_key_id and settings.r2_secret_access_key
+                and settings.r2_public_base_url)
+
+
+def backend_name() -> str:
+    return "r2" if r2_enabled() else "local"
+
+
+def _public_base() -> str:
+    return settings.r2_public_base_url.rstrip("/") + "/"
+
+
+def public_prefixes() -> list[str]:
+    """Every prefix a photo of ours may start with.
+
+    The local prefix stays valid even after R2 is switched on, so photos filed
+    before the switch keep resolving instead of turning into broken images.
+    """
+    prefixes = [LOCAL_PREFIX]
+    if r2_enabled():
+        prefixes.append(_public_base())
+    return prefixes
+
+
+def is_managed_url(url: str | None) -> bool:
+    """True only for a URL this app's own upload endpoint produced."""
+    if not url:
+        return False
+    for prefix in public_prefixes():
+        if url.startswith(prefix):
+            return bool(UPLOAD_NAME.fullmatch(url[len(prefix):]))
+    return False
+
+
+def _get_client():
+    """One boto3 client, built on first use.
+
+    Built lazily so that a deployment with no bucket configured never imports
+    boto3 at all, and so a typo in the credentials surfaces on the first upload
+    rather than taking the whole app down at boot.
+    """
+    global _client
+    with _client_lock:
+        if _client is None:
+            import boto3
+            from botocore.config import Config
+
+            _client = boto3.client(
+                "s3",
+                endpoint_url=settings.r2_endpoint_url,
+                aws_access_key_id=settings.r2_access_key_id,
+                aws_secret_access_key=settings.r2_secret_access_key,
+                region_name="auto",          # R2 ignores regions but SigV4 wants one
+                config=Config(signature_version="s3v4",
+                              retries={"max_attempts": 3, "mode": "standard"}),
+            )
+        return _client
+
+
+def save_jpeg(data: bytes, name: str) -> str:
+    """Store one processed JPEG and return the URL it is served from."""
+    if not UPLOAD_NAME.fullmatch(name):
+        raise ValueError(f"ชื่อไฟล์ไม่ถูกรูปแบบ: {name}")
+
+    if r2_enabled():
+        _get_client().put_object(
+            Bucket=settings.r2_bucket,
+            Key=name,
+            Body=data,
+            ContentType="image/jpeg",
+            # Photos never change once written, so let browsers and Cloudflare
+            # keep them for a year.
+            CacheControl="public, max-age=31536000, immutable",
+        )
+        return _public_base() + name
+
+    os.makedirs(settings.upload_dir, exist_ok=True)
+    path = os.path.join(settings.upload_dir, name)
+    with open(path, "wb") as handle:
+        handle.write(data)
+    return LOCAL_PREFIX + name

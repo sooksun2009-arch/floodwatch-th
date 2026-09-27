@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
+from .. import storage
 from ..config import settings
 from ..database import get_db
 from ..deps import client_ip, get_current_user, get_current_user_optional, rate_limit_reports
@@ -125,6 +126,12 @@ def create_report(payload: ReportIn, request: Request, db: Session = Depends(get
     if payload.level is None and payload.depth_cm is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "ต้องระบุระดับน้ำ หรือความลึกเป็น ซม.")
 
+    # photo_url is just a string on the payload, and it ends up in an <img> on
+    # the moderation screen. Only a URL our own upload endpoint minted may go in.
+    if payload.photo_url and not storage.is_managed_url(payload.photo_url):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "รูปต้องอัปโหลดผ่านระบบนี้เท่านั้น")
+
     level = payload.level.value if payload.level else level_from_depth(payload.depth_cm)
 
     # เจ้าหน้าที่/ผู้ดูแล แจ้งเข้ามาถือเป็นข้อมูลทางการ ขึ้นแผนที่ทันที
@@ -200,6 +207,9 @@ def update_report(report_id: str, payload: ReportUpdateIn, db: Session = Depends
         raise HTTPException(status.HTTP_403_FORBIDDEN, "แก้ไขได้เฉพาะรายงานของตนเอง")
 
     data = payload.model_dump(exclude_unset=True)
+    if data.get("photo_url") and not storage.is_managed_url(data["photo_url"]):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "รูปต้องอัปโหลดผ่านระบบนี้เท่านั้น")
     if "level" in data and data["level"] is not None:
         data["level"] = data["level"].value
     elif data.get("depth_cm") is not None:

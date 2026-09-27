@@ -1,5 +1,6 @@
 """Areas, stats, and image upload."""
 import io
+import logging
 import os
 import uuid
 from datetime import timedelta
@@ -9,6 +10,7 @@ from PIL import Image, UnidentifiedImageError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .. import storage
 from ..config import settings
 from ..database import get_db
 from ..deps import client_ip, enforce_limit, get_current_user_optional
@@ -17,6 +19,8 @@ from ..models import (
 )
 from ..schemas import AreaOut, ProvinceStat, SummaryOut, TimelinePoint, UploadOut
 from ..services import expire_stale_reports, since_cutoff, worst_level
+
+logger = logging.getLogger("floodwatch")
 
 router = APIRouter(prefix="/api", tags=["misc"])
 
@@ -152,10 +156,21 @@ async def upload_photo(request: Request, file: UploadFile = File(...),
 
     image.thumbnail((settings.max_image_px, settings.max_image_px))
 
-    os.makedirs(settings.upload_dir, exist_ok=True)
-    name = f"{utcnow():%Y%m%d}-{uuid.uuid4().hex[:12]}.jpg"
-    path = os.path.join(settings.upload_dir, name)
-    image.save(path, format="JPEG", quality=82, optimize=True)
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", quality=82, optimize=True)
+    payload = buffer.getvalue()
 
-    return UploadOut(url=f"/uploads/{name}", width=image.width, height=image.height,
-                     bytes=os.path.getsize(path))
+    name = f"{utcnow():%Y%m%d}-{uuid.uuid4().hex[:12]}.jpg"
+    try:
+        url = storage.save_jpeg(payload, name)
+    except Exception as exc:
+        # Deliberately not falling back to local disk: that would look like a
+        # success and then lose the photo at the next deploy, which is the exact
+        # failure the bucket was added to prevent.
+        logger.exception("บันทึกรูปไม่สำเร็จ (%s)", storage.backend_name())
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            "บันทึกรูปไม่สำเร็จ ลองใหม่อีกครั้ง "
+                            "หรือส่งรายงานโดยไม่แนบรูปก็ได้") from exc
+
+    return UploadOut(url=url, width=image.width, height=image.height,
+                     bytes=len(payload))

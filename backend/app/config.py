@@ -113,6 +113,19 @@ class Settings(BaseSettings):
     max_upload_mb: int = 8
     max_image_px: int = 1600
 
+    # --- Photo storage ---
+    # Unset means the container's own filesystem, which on a host with no
+    # persistent disk means every deploy deletes every photo ever uploaded.
+    # Fill all five in and photos go to Cloudflare R2 (or any S3-compatible
+    # bucket) instead and outlive the container.
+    #   endpoint:    https://<account id>.r2.cloudflarestorage.com
+    #   public base: the bucket's public r2.dev URL, or a custom domain
+    r2_endpoint_url: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket: str = ""
+    r2_public_base_url: str = ""
+
     # Optional: let Claude phrase the chatbot answer from retrieved facts.
     # Off by default — the deterministic engine answers without any API credit.
     chat_llm_enabled: bool = False

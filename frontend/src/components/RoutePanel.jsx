@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react'
-import { api, ApiError, LEVELS, SITUATIONS, VERDICTS, levelLabel, timeAgo } from '../api'
+import {
+  api, ApiError, LEVELS, SITUATIONS, VERDICTS, levelLabel, safePhotoUrl, timeAgo,
+} from '../api'
 
 // One endpoint input: type a name, use GPS, or drop a pin on the map.
 function EndpointInput({ id, label, badge, value, point, onChange, onPick, picking, onUseGps }) {
@@ -336,9 +338,9 @@ function ObstacleList({ obstacles, onVote, votedIds }) {
                       <span className="chip bg-sky-500/15 text-sky-300">ข้อมูลทางการ</span>
                     )}
                   </div>
-                  {report.photo_url && (
+                  {safePhotoUrl(report.photo_url) && (
                     <img
-                      src={report.photo_url}
+                      src={safePhotoUrl(report.photo_url)}
                       alt="ภาพจุดน้ำท่วม"
                       loading="lazy"
                       className="mt-2 max-h-44 rounded-lg object-cover"

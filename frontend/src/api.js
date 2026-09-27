@@ -172,6 +172,23 @@ export const situationColor = (level) => SITUATIONS[level]?.color || '#64748b'
 export const levelColor = (level) => LEVELS[level]?.color || '#64748b'
 export const levelLabel = (level) => LEVELS[level]?.label || level || 'ไม่ระบุ'
 
+/**
+ * A photo URL that is safe to hand to an <img src>.
+ *
+ * The server is the real gate — it stores a photo_url only when its own upload
+ * endpoint minted it — but this stays as a second line, because every screen
+ * that renders a report photo would otherwise have to remember the rule, and
+ * one that forgets turns a report into a request the viewer's browser makes on
+ * a stranger's behalf. Relative uploads and https both pass; anything else,
+ * including javascript: and protocol-relative //host, does not.
+ */
+export const safePhotoUrl = (url) => {
+  if (typeof url !== 'string') return null
+  if (url.startsWith('/uploads/')) return url
+  if (url.startsWith('https://')) return url
+  return null
+}
+
 // ---------------------------------------------------------------- coordinates
 
 // Thailand's bounding box, so a pasted number from somewhere else is rejected

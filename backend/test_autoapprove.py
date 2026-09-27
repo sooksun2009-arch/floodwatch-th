@@ -64,7 +64,7 @@ with TestClient(app) as c:
     lone_id = r.json()["id"]
 
     # -------------------------------------------------- photo clears it
-    r = file(c, *BANGNA, ip="2.2.2.2", photo="/uploads/x.jpg")
+    r = file(c, *BANGNA, ip="2.2.2.2", photo="/uploads/20260927-aaaabbbbcccc.jpg")
     check("แจ้งพร้อมรูป → ขึ้นแผนที่เอง", r.status_code == 201
           and r.json()["status"] == "approved", r.text[:200])
     check("บันทึกเหตุผลว่าขึ้นเพราะรูป", "รูปถ่าย" in (status_of(r.json()["id"])[1] or ""),
@@ -154,7 +154,7 @@ with TestClient(app) as c:
     # -------------------------------------------------- the off switch
     settings.auto_approve_with_photo = False
     settings.auto_approve_corroborated = False
-    r = file(c, 13.9000, 100.3000, ip="9.9.9.9", photo="/uploads/y.jpg")
+    r = file(c, 13.9000, 100.3000, ip="9.9.9.9", photo="/uploads/20260927-ddddeeeeffff.jpg")
     check("ปิดสวิตช์แล้ว → กลับไปเข้าคิวทุกกรณี", r.json()["status"] == "pending",
           r.text[:200])
     settings.auto_approve_with_photo = True

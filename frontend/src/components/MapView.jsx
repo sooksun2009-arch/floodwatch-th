@@ -19,7 +19,7 @@ import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&ur
 
 setWorkerUrl(maplibreWorkerUrl)
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { LEVELS, SITUATIONS, levelLabel, timeAgo } from '../api'
+import { LEVELS, SITUATIONS, levelLabel, safePhotoUrl, timeAgo } from '../api'
 
 // Raster OpenStreetMap tiles need no API key, which keeps the app free to run.
 // For production traffic, point VITE_MAP_STYLE at a tile provider you have an
@@ -338,9 +338,10 @@ export default function MapView({
 
       // Only same-origin upload paths are rendered; an absolute URL from a
       // report could otherwise point anywhere, including a javascript: scheme.
-      if (typeof props.photo === 'string' && props.photo.startsWith('/uploads/')) {
+      const photo = safePhotoUrl(props.photo)
+      if (photo) {
         const image = document.createElement('img')
-        image.src = props.photo
+        image.src = photo
         image.alt = 'ภาพจุดน้ำท่วม'
         image.loading = 'lazy'
         image.style.cssText = 'margin-top:.5rem;border-radius:.5rem;width:100%'

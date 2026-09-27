@@ -65,7 +65,22 @@ services:
       - key: HTTP_USER_AGENT
         sync: false
 
-      # Free plan has no disk; keep uploads on the container's own filesystem
-      # and accept that they do not survive a deploy.
+      # Free plan has no disk. Without a bucket, uploads live on the
+      # container's own filesystem and every deploy deletes them.
       - key: UPLOAD_DIR
         value: /tmp/uploads
+
+      # Cloudflare R2 (or any S3-compatible bucket) makes photos outlive the
+      # container. Fill in all five in the dashboard to switch storage over;
+      # leave them blank and the app keeps using local disk. Photos already
+      # uploaded to disk keep working either way.
+      - key: R2_ENDPOINT_URL
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_PUBLIC_BASE_URL
+        sync: false

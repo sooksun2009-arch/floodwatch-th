@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, ApiError, LEVELS, levelLabel, timeAgo } from '../api'
+import { api, ApiError, LEVELS, levelLabel, safePhotoUrl, timeAgo } from '../api'
 import { useAuth } from '../auth'
 
 const TABS = [
@@ -103,9 +103,9 @@ function Queue() {
                   ตรวจพิกัดบนแผนที่ ({report.lat.toFixed(5)}, {report.lng.toFixed(5)})
                 </a>
               </div>
-              {report.photo_url && (
+              {safePhotoUrl(report.photo_url) && (
                 <img
-                  src={report.photo_url}
+                  src={safePhotoUrl(report.photo_url)}
                   alt="ภาพประกอบรายงาน"
                   className="h-28 w-28 shrink-0 rounded-lg object-cover"
                 />
@@ -248,9 +248,9 @@ function LiveReports() {
                   ดูพิกัดบนแผนที่
                 </a>
               </div>
-              {report.photo_url && (
+              {safePhotoUrl(report.photo_url) && (
                 <img
-                  src={report.photo_url}
+                  src={safePhotoUrl(report.photo_url)}
                   alt="ภาพประกอบรายงาน"
                   className="h-24 w-24 shrink-0 rounded-lg object-cover"
                 />

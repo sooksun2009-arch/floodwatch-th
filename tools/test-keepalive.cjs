@@ -25,8 +25,11 @@ const src = require('fs').readFileSync(process.argv[2] || 'keepalive.gs', 'utf8'
     .replace(/^const /gm, 'var ')
 eval(src)
 // ให้ fetchJson คืนค่าสถิติที่เราคุม
-fetchJson = p => ({ ok: true, data: { pending_moderation: pending,
-  active_reports: 4, reports_last_24h: 6 } })
+let reports = []
+fetchJson = p => (p.indexOf('/api/reports') === 0
+  ? { ok: true, data: reports }
+  : { ok: true, data: { pending_moderation: pending,
+      active_reports: 4, reports_last_24h: 6 } })
 
 const fails = []
 const check = (name, ok, extra='') => {
@@ -54,6 +57,34 @@ sent = []; pending = 0; checkPending()
 check('เคลียร์คิวหมด -> เงียบ', sent.length === 0, sent.length)
 sent = []; pending = 1; checkPending()
 check('มีรายการใหม่หลังเคลียร์ -> เตือนทันที ไม่ติดคูลดาวน์เดิม', sent.length === 1, sent.length)
+
+// --- รายงานที่ขึ้นแผนที่เองแล้ว ---------------------------------------------
+// ตั้งแต่บังคับแนบรูป คิวรออนุมัติเป็นศูนย์ตลอด เจ้าของแอปจึงไม่เคยได้รับ
+// แจ้งเตือนอะไรเลย ทั้งที่มีรายงานขึ้นแผนที่ไปแล้ว นี่คือช่องโหว่ที่ตัวนี้ปิด
+
+const rpt = (id, place, label) => ({ id, place, level_label: label, reporter_name: 'นิรนาม' })
+
+props.delete('seen_report_ids')
+reports = [rpt('a', 'ถนนศรีนครินทร์', 'น้ำท่วม 10-30 ซม.'), rpt('b', 'ลาดพร้าว', 'น้ำขัง')]
+sent = []; checkNewReports()
+check('รอบแรก -> จำไว้เฉย ๆ ไม่ยิงของเก่าทั้งกองใส่โทรศัพท์', sent.length === 0, sent.length)
+
+sent = []; checkNewReports()
+check('ไม่มีอะไรใหม่ -> เงียบ', sent.length === 0, sent.length)
+
+reports = [rpt('c', 'สุขุมวิท 71', 'น้ำท่วมเกิน 60 ซม.'), ...reports]
+sent = []; checkNewReports()
+check('มีรายงานใหม่ -> เตือนทันที', sent.length === 1, sent.length)
+check('หัวข้อบอกจำนวนรายการใหม่', /มีรายงานใหม่ 1 รายการ/.test(sent[0] || ''), sent[0])
+
+sent = []; checkNewReports()
+check('รายการเดิม -> ไม่เตือนซ้ำ', sent.length === 0, sent.length)
+
+// จำนวนลดลงเพราะของเก่าหมดอายุ ต้องไม่ทำให้ของใหม่เงียบตามไปด้วย
+reports = [rpt('d', 'พระราม 2', 'ปิดการจราจร')]
+sent = []; checkNewReports()
+check('ของเก่าหมดอายุจนจำนวนลด แต่มีของใหม่ -> ยังเตือน', sent.length === 1, sent.length)
+
 
 Date.now = realNow
 console.log('\n' + '='.repeat(56))

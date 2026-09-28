@@ -147,6 +147,7 @@ function keepAwake() {
   // รายงานที่รออนุมัติ — เรื่องเดียวที่ต้องให้คนกดอะไรสักอย่าง
   try {
     checkPending();
+    checkNewReports();
   } catch (e) {
     Logger.log('ตรวจรายงานรออนุมัติไม่สำเร็จ: %s', e);
   }
@@ -300,13 +301,72 @@ function checkPending() {
     '',
     'กดอนุมัติที่ ' + BASE_URL + '/admin',
     '',
-    'ทุกรายงานจากคนทั่วไปต้องผ่านการตรวจก่อนขึ้นแผนที่ และต้องแนบรูปจึงจะแจ้งได้',
+    'รายงานที่มีรูปจะขึ้นแผนที่เองทันที ที่ค้างอยู่ในคิวคือรายการที่ระบบยังไม่มั่นใจ',
   ].join(NEWLINE);
 
   notify(subject, body);
   store.setProperty('pending_count', String(pending));
   store.setProperty('pending_at', String(now));
   Logger.log('แจ้งเตือน: รออนุมัติ %s รายการ', pending);
+}
+
+/**
+ * แจ้งเตือนรายงานใหม่ที่ขึ้นแผนที่ไปแล้ว
+ *
+ * checkPending() ดูแต่คิวรออนุมัติ ซึ่งตั้งแต่บังคับแนบรูป รายงานจากคนทั่วไป
+ * จะขึ้นแผนที่เองทันที คิวจึงเป็นศูนย์ตลอดและเจ้าของแอปไม่เคยได้รับแจ้งเตือน
+ * อะไรเลย ทั้งที่ของที่ต้องรู้เปลี่ยนไปแล้ว: ไม่ใช่ "มีอะไรรอคุณกด" แต่เป็น
+ * "มีอะไรขึ้นแผนที่ไปแล้วโดยที่คุณยังไม่เห็น"
+ *
+ * เตือนตามรหัสรายงานที่เคยเห็น ไม่ใช่ตามจำนวน เพราะจำนวนลดลงได้เมื่อรายงานเก่า
+ * หมดอายุ แล้วรายงานใหม่จะเงียบไปด้วย
+ */
+function checkNewReports() {
+  const res = fetchJson('/api/reports?limit=10');
+  if (!res.ok) {
+    Logger.log('อ่านรายงานไม่ได้: %s', res.error);
+    return;
+  }
+
+  const rows = Array.isArray(res.data) ? res.data : (res.data.items || []);
+  if (!rows.length) return;
+
+  const store = PropertiesService.getScriptProperties();
+  const seenRaw = store.getProperty('seen_report_ids') || '';
+  const seen = seenRaw ? seenRaw.split(',') : [];
+
+  const fresh = rows.filter(function (r) {
+    return r && r.id && seen.indexOf(r.id) === -1;
+  });
+
+  // ครั้งแรกสุดยังไม่เคยจำอะไรไว้ ถ้าเตือนเลยจะได้ข้อความยาวเหยียดของเก่าทั้งหมด
+  // จำไว้เฉย ๆ แล้วเริ่มเตือนจากรายการถัดไป
+  const firstRun = seen.length === 0;
+
+  const ids = rows.map(function (r) { return r.id; }).slice(0, 40);
+  store.setProperty('seen_report_ids', ids.join(','));
+
+  if (firstRun || !fresh.length) {
+    if (firstRun) Logger.log('จำรายงานปัจจุบันไว้ %s รายการ เริ่มเตือนจากรายการถัดไป', ids.length);
+    return;
+  }
+
+  const lines = [
+    'มีคนแจ้งน้ำท่วมเข้ามาใหม่ และขึ้นแผนที่ไปแล้ว (มีรูปแนบจึงไม่ต้องรออนุมัติ)',
+    '',
+  ];
+  fresh.slice(0, 5).forEach(function (r) {
+    const where = r.place || r.district || r.province_name || 'ไม่ระบุจุด';
+    const who = r.reporter_name ? ' โดย ' + r.reporter_name : '';
+    lines.push('• ' + where + ' — ' + (r.level_label || r.level || '') + who);
+  });
+  if (fresh.length > 5) lines.push('• และอีก ' + (fresh.length - 5) + ' รายการ');
+  lines.push('');
+  lines.push('ดูบนแผนที่ ' + BASE_URL);
+  lines.push('ถ้าเป็นรายงานที่ไม่จริงหรือไม่เหมาะสม ลบได้ที่ ' + BASE_URL + '/admin');
+
+  notify('FloodWatch TH: มีรายงานใหม่ ' + fresh.length + ' รายการ', lines.join(NEWLINE));
+  Logger.log('แจ้งเตือนรายงานใหม่ %s รายการ', fresh.length);
 }
 
 /** ส่งทั้งอีเมลและ Telegram (ถ้าตั้งค่าไว้) */

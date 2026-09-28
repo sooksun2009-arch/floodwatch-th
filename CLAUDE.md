@@ -130,8 +130,11 @@ report, never folded into the verdict.
 ## 8. Safety asymmetries decide the defaults
 
 - A wrong flood pin costs a detour; a real one held in a moderation queue can
-  send someone into water they cannot see the depth of. So a corroborated or
-  photographed report goes live unreviewed.
+  send someone into water they cannot see the depth of. The code therefore
+  defaults to letting a corroborated or photographed report go live unreviewed.
+  This deployment has both switched off since 2026-09-28, chosen once Telegram
+  alerts made the queue visible within minutes rather than at dawn — the
+  asymmetry argues for publishing only while nobody is watching the queue.
 - Taking a hazard *off* the map needs more agreement than putting one on —
   three disputes, unchanged.
 - Showing stale data as current is worse than showing nothing. Reports expire

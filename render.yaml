@@ -48,10 +48,15 @@ services:
       # own when it carries a photo, or when a second person reports the same
       # spot. Listed here so they can be switched off from the dashboard
       # without a redeploy.
+      # Both off by the operator's decision, taken after Telegram alerts were
+      # working: every public report waits for a human now. The code still
+      # defaults these on, because a queue nobody is told about is worse than
+      # an unreviewed pin — that is no longer the situation here, and turning
+      # either back on is a dashboard edit away.
       - key: AUTO_APPROVE_WITH_PHOTO
-        value: "true"
+        value: "false"
       - key: AUTO_APPROVE_CORROBORATED
-        value: "true"
+        value: "false"
       - key: AUTO_APPROVE_RADIUS_M
         value: "300"
       - key: AUTO_APPROVE_WINDOW_HOURS

@@ -284,6 +284,31 @@ check("ถนนไกลออกไป -> ไม่จับ",
 check("ยังไม่เคยโหลดข้อมูล -> บอกว่า None ไม่ใช่ 0",
       fe.cached_ring_count() is None, fe.cached_ring_count())
 
+# The feed refuses a page size it considers too large and does not say what
+# its ceiling is, so the only way to find it is to ask. Production spent a
+# deploy answering "HTTP 400: Query param 'limit' is invalid" and loading
+# nothing at all.
+reset()
+seen_limits = []
+
+
+def picky(request):
+    limit = int(dict(request.url.params).get("limit", 0))
+    seen_limits.append(limit)
+    if limit > 10000:
+        return httpx.Response(
+            400, text=json_dumps({"code": "400",
+                                  "description": "Query param 'limit' is invalid"}))
+    return serve_features(features([SQUARE]))(request)
+
+
+rings = with_upstream(picky, fe.all_rings)
+check("ปลายทางปฏิเสธ limit ใหญ่ -> ไล่ลงมาจนได้", len(rings) == 1, rings)
+check("และลองค่าที่เล็กลงจริง ไม่ใช่ยอมแพ้",
+      len(seen_limits) >= 2 and seen_limits[0] > seen_limits[-1], seen_limits)
+check("ไม่มีความล้มเหลวค้างไว้ เพราะสุดท้ายสำเร็จ",
+      "features" not in fe.LAST_FAILURE, fe.LAST_FAILURE)
+
 reset()
 check("รวมรูปจาก 2 แหล่งเข้าด้วยกันได้",
       len(routing._merge_polygons(

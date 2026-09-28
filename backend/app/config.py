@@ -226,11 +226,15 @@ class Settings(BaseSettings):
     # Unpublished quota, so the daily figure stays conservative -- with a six
     # hour cache, repeat views of the same area cost nothing anyway.
     #
-    # The per-minute figure is not a safety margin, it is a floor: one 1400x900
-    # screen is about 25 tiles, so 20 meant the first screenful ran out and the
-    # layer went blank everywhere. A budget low enough to break normal use is
-    # not protecting anything, it is just a bug with a good excuse.
-    gistda_tiles_per_min: int = 60
+    # The per-minute figure is a floor, not a safety margin, and 60 was still
+    # a floor set below the floor: production reported 60/60 spent with 60/2000
+    # used for the day, which is one screenful and then a blank layer. A
+    # retina viewport with the map's tile buffer asks for far more than the
+    # 25 the arithmetic suggested.
+    #
+    # The daily figure is the real guard, and the six hour cache means looking
+    # at the same area again costs nothing, so the minute can be generous.
+    gistda_tiles_per_min: int = 240
     gistda_tiles_per_day: int = 2000
     # Past this the tiles subdivide without getting sharper — four times the
     # requests per level for the same picture.
@@ -267,10 +271,13 @@ class Settings(BaseSettings):
     # parameters, but the feed returned exactly ten outlines for the whole
     # country -- which is the OGC default page size, not a dry country. Asking
     # explicitly is the difference between the first page and the data.
-    # 5000 came back exactly full, which the truncation warning caught: that is
-    # a page boundary, not the end of the data. The whole feed is about 14 MB,
-    # comfortably under the download ceiling, so ask for all of it.
-    gistda_features_limit: int = 100000
+    # Asking for everything at once came back "Query param 'limit' is invalid":
+    # the feed has a cap and does not say what it is. So this is a ladder --
+    # the first value that is accepted wins, and the truncation warning still
+    # fires if the answer arrives exactly full, because a page boundary and a
+    # dry country look identical from here.
+    gistda_features_limit: int = 20000
+    gistda_features_limit_fallbacks: str = "10000,5000,1000"
 
     # Shared secret for POST /api/stations/bma/ingest. The Bangkok drainage
     # site refuses connections from outside Thailand, so the container cannot

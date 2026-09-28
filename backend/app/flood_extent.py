@@ -307,10 +307,19 @@ async def all_rings(product: str | None = None) -> list:
 
     async def fetch():
         feature_budget().spend("ข้อมูลพื้นที่น้ำท่วม")
+        # Try the largest page the feed will accept. It refuses without saying
+        # what its ceiling is, so the only way to find it is to ask.
+        wanted = [settings.gistda_features_limit] + [
+            int(x) for x in settings.gistda_features_limit_fallbacks.split(",") if x.strip()
+        ]
         async with _client() as client:
-            response = await client.get(
-                FEATURES_PATH.format(product=chosen),
-                params={"limit": settings.gistda_features_limit})
+            response = None
+            for limit in wanted:
+                response = await client.get(
+                    FEATURES_PATH.format(product=chosen), params={"limit": limit})
+                if response.status_code != 400 or "limit" not in (response.text or ""):
+                    break
+                logger.info("GISTDA ปฏิเสธ limit=%s ลองค่าที่เล็กลง", limit)
             response.raise_for_status()
             size_mb = len(response.content) / 1_048_576
             if size_mb > settings.gistda_max_download_mb:
@@ -337,7 +346,9 @@ async def all_rings(product: str | None = None) -> list:
         # the first version of this read ten outlines for all of Thailand and
         # looked exactly like a quiet week.
         features = len((payload or {}).get("features") or [])
-        if features >= settings.gistda_features_limit:
+        asked = int(str(response.request.url).split("limit=")[-1].split("&")[0] or 0) \
+            if "limit=" in str(response.request.url) else settings.gistda_features_limit
+        if features >= asked:
             LAST_FAILURE["features_truncated"] = (
                 f"ได้มา {features} รายการ ซึ่งชนเพดานที่ขอไว้พอดี "
                 f"— แปลว่าน่าจะมีมากกว่านี้ที่ยังไม่ได้ดึง")

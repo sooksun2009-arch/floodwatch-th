@@ -10,6 +10,47 @@ import CameraModal from '../components/CameraModal'
 import ChatWidget from '../components/ChatWidget'
 import ReportModal from '../components/ReportModal'
 
+function RadarCaption() {
+  // Radar tiles are transparent where it is not raining, so a working radar
+  // over a dry country looks exactly like a broken one. This says which it is,
+  // using the camera feed — cameras with rain on them right now are
+  // independent evidence that the rain data is live.
+  const [state, setState] = useState({ loading: true })
+
+  useEffect(() => {
+    let alive = true
+    api
+      .rainCameras()
+      .then((r) => alive && setState({ loading: false, data: r }))
+      .catch(() => alive && setState({ loading: false, error: true }))
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  let text = 'กำลังตรวจสภาพฝน…'
+  if (!state.loading) {
+    if (state.error || state.data?.available === false) {
+      text = 'ตรวจสภาพฝนไม่ได้ตอนนี้'
+    } else {
+      const wet = state.data?.cameras?.length ?? 0
+      const scanned = state.data?.scanned ?? 0
+      text = wet
+        ? `ขณะนี้ฝนตกที่กล้อง ${wet} จุด จาก ${scanned} จุดทั่วประเทศ`
+        : `ขณะนี้ไม่มีฝนที่กล้องทั้ง ${scanned} จุดทั่วประเทศ`
+    }
+  }
+
+  return (
+    <div className="absolute left-3 top-14 z-10 max-w-[15rem] rounded-xl border border-slate-700 bg-slate-950/90 px-2.5 py-1.5 text-xs text-slate-300 backdrop-blur">
+      {text}
+      <span className="mt-0.5 block text-[11px] text-slate-500">
+        พื้นที่ที่ไม่มีสี = ไม่มีฝน
+      </span>
+    </div>
+  )
+}
+
 function SafetyNotice() {
   // Permanent, not dismissible, and outside the map rather than floating over
   // it. Someone opening this during a flood needs to know two things before
@@ -321,7 +362,8 @@ export default function Home() {
             <button
               onClick={() => setRadarOn((on) => !on)}
               aria-pressed={radarOn}
-              className={`absolute right-3 top-3 z-10 rounded-xl border px-3 py-2 text-sm backdrop-blur transition-colors ${
+              // Top-left: the map's own zoom controls own the top-right.
+              className={`absolute left-3 top-3 z-10 rounded-xl border px-3 py-2 text-sm backdrop-blur transition-colors ${
                 radarOn
                   ? 'border-sky-500 bg-sky-950/90 text-sky-200'
                   : 'border-slate-700 bg-slate-950/85 text-slate-300 hover:bg-slate-900'
@@ -330,13 +372,17 @@ export default function Home() {
               🌧️ เรดาร์ฝน
             </button>
           )}
+          {!picking && rainEnabled && radarOn && <RadarCaption />}
           {!picking && (
             <button
               onClick={() => {
                 setReportPoint(null)
                 setReportOpen(true)
               }}
-              className="absolute bottom-3 right-3 z-10 rounded-full bg-orange-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-950/50 hover:bg-orange-500"
+              // Lifted on wide screens only: there the map reaches the bottom
+              // of the window and this lands on top of the chat button, which
+              // is fixed to the viewport. On a phone the map ends well above it.
+              className="absolute bottom-3 right-3 z-10 rounded-full bg-orange-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-950/50 hover:bg-orange-500 lg:bottom-24"
             >
               แจ้งน้ำท่วม
             </button>

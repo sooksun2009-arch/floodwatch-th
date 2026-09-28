@@ -165,6 +165,41 @@ const check = (name, ok, extra = '') => {
   if (!closed) await page.keyboard.press('Escape')
   await new Promise((r) => setTimeout(r, 400))
 
+  // Floating controls must not sit on top of one another. This app keeps
+  // growing corner buttons — radar, report, chat, zoom, locate — and two of
+  // them landed on each other twice before anyone noticed, because each was
+  // correct in isolation.
+  const overlaps = await page.evaluate(() => {
+    const seen = new Map()
+    const add = (label, el) => {
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      if (r.width < 8 || r.height < 8) return
+      if (getComputedStyle(el).visibility === 'hidden') return
+      seen.set(label + ':' + Math.round(r.x) + ',' + Math.round(r.y), { label, r })
+    }
+    document
+      .querySelectorAll('.maplibregl-ctrl button, button, a[href^="tel:"]')
+      .forEach((el) => {
+        const style = getComputedStyle(el)
+        if (style.position === 'static') return
+        add((el.textContent || el.className || 'ปุ่ม').trim().slice(0, 18), el)
+      })
+    const items = [...seen.values()]
+    const hits = []
+    for (let i = 0; i < items.length; i++) {
+      for (let j = i + 1; j < items.length; j++) {
+        const a = items[i].r
+        const b = items[j].r
+        const dx = Math.min(a.right, b.right) - Math.max(a.left, b.left)
+        const dy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+        if (dx > 4 && dy > 4) hits.push(`${items[i].label} ทับ ${items[j].label}`)
+      }
+    }
+    return hits
+  })
+  check('ปุ่มลอยบนแผนที่ไม่ทับกัน', overlaps.length === 0, overlaps.join(' · '))
+
   // Rain features are off until a key is configured, and the button that
   // controls them must be absent rather than present and broken.
   const rain = await page.evaluate(async () => {

@@ -410,6 +410,43 @@ def cached_ring_count(product: str | None = None) -> int | None:
     return len(entry.value) if entry else None
 
 
+def cached_coverage(product: str | None = None) -> dict | None:
+    """Where the outlines in hand actually are.
+
+    A count alone does not answer the question that matters: 4,236 shapes
+    loaded and no route anywhere raised a flag, and "the country is dry" and
+    "the page we got covers a different province" look the same from a count.
+    This reports the bounding box and a rough spread so that question can be
+    settled by looking instead of guessing.
+    """
+    entry = _cache._entries.get(f"features:{product_or_default(product)}")
+    rings = entry.value if entry else None
+    if not rings:
+        return None
+    lngs = [p[0] for r in rings for p in r]
+    lats = [p[1] for r in rings for p in r]
+    return {
+        "count": len(rings),
+        "west": round(min(lngs), 3), "east": round(max(lngs), 3),
+        "south": round(min(lats), 3), "north": round(max(lats), 3),
+    }
+
+
+def rings_near(lat: float, lng: float, km: float = 5.0,
+               product: str | None = None) -> int:
+    """How many loaded outlines lie within km of a point. For diagnosis."""
+    entry = _cache._entries.get(f"features:{product_or_default(product)}")
+    rings = entry.value if entry else []
+    pad_lat, pad_lng = km / 111.0, km / 105.0
+    hits = 0
+    for ring in rings:
+        minx, miny, maxx, maxy = _bounds(ring)
+        if (minx - pad_lng <= lng <= maxx + pad_lng
+                and miny - pad_lat <= lat <= maxy + pad_lat):
+            hits += 1
+    return hits
+
+
 def path_near(path, rings, corridor_km: float | None = None) -> bool:
     """Whether a route runs within corridor_km of observed water.
 

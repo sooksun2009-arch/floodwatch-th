@@ -29,9 +29,26 @@ def status_():
         # Without the distinction, a silent failure and a dry week look the
         # same from outside, which is the fault this project keeps repeating.
         "rings_loaded": flood_extent.cached_ring_count(),
+        # Where those outlines are, not just how many. A count cannot tell
+        # "nothing is flooded" from "the page we got covers another region".
+        "coverage": flood_extent.cached_coverage(),
         "route_corridor_km": flood_extent.settings.gistda_route_corridor_km,
         "budget": flood_extent.budget().state(),
     }
+
+
+@router.get("/near", response_model=dict)
+async def near(lat: float, lng: float, km: float = 5.0):
+    """How many observed flood outlines lie near a point.
+
+    Added when routes stopped raising the satellite flag with thousands of
+    outlines loaded: a count and a bounding box could not tell a dry area from
+    a page of data covering somewhere else.
+    """
+    await flood_extent.all_rings()
+    return {"lat": lat, "lng": lng, "km": km,
+            "rings_near": flood_extent.rings_near(lat, lng, km),
+            "coverage": flood_extent.cached_coverage()}
 
 
 @router.get("/diagnose", response_model=dict)

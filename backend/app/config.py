@@ -242,7 +242,12 @@ class Settings(BaseSettings):
     # its own small daily budget: this is a big fetch, not a tile.
     gistda_features_cache_sec: int = 10800
     gistda_features_per_day: int = 200
-    gistda_max_download_mb: float = 12.0
+    # The whole country is about 14 MB, so 12 refused the real dataset and the
+    # layer quietly did nothing. Raised past it with room to grow, and the
+    # outlines are coarsened as they are read rather than kept at full
+    # resolution -- on a 512 MB instance the parsed structure, not the
+    # download, is what would end the process.
+    gistda_max_download_mb: float = 24.0
     # How many flood areas may be handed to the routing engine at once, and how
     # coarsely their outlines are rounded first. ORS rejects avoid_polygons that
     # are too many or too intricate, and it rejects the whole request rather

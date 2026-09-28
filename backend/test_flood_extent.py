@@ -228,6 +228,16 @@ reset()
 rings = with_upstream(serve_features(features([SQUARE])), fe.all_rings)
 check("อ่านรูปหลายเหลี่ยมจาก GeoJSON ได้", len(rings) == 1, rings)
 
+# Rounded as they are read, not later: the full-resolution country does not
+# need to exist in memory on a 512MB instance even for a moment longer.
+reset()
+JAGGED = [[100.5000, 13.7000], [100.50001, 13.7000], [100.50002, 13.7000],
+          [100.5200, 13.7000], [100.5200, 13.7200], [100.5000, 13.7200],
+          [100.5000, 13.7000]]
+tidy = with_upstream(serve_features(features([JAGGED])), fe.all_rings)
+check("ย่อจุดตั้งแต่ตอนอ่าน ไม่เก็บความละเอียดเต็มไว้",
+      tidy and len(tidy[0]) < len(JAGGED), tidy)
+
 reset()
 got = with_upstream(serve_features(features([SQUARE])),
                     lambda: fe.avoid_near((100.55, 13.75, 100.60, 13.80)))
@@ -252,7 +262,8 @@ check("จำกัดจำนวนรูปที่ส่งให้ ORS �
 # The ceiling exists because this instance is small and the endpoint takes no
 # parameters -- there is no way to ask for less.
 reset()
-huge = with_upstream(serve_features(features([SQUARE]), size=14 * 1024 * 1024),
+oversize = int((settings.gistda_max_download_mb + 2) * 1024 * 1024)
+huge = with_upstream(serve_features(features([SQUARE]), size=oversize),
                      fe.all_rings)
 check("ข้อมูลใหญ่เกินเพดาน -> ไม่แตะ ไม่ล่ม คืนว่าง", huge == [], len(huge))
 check("และบอกไว้ว่าทำไมถึงไม่มีข้อมูล",

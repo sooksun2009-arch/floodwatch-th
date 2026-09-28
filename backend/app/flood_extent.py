@@ -321,9 +321,16 @@ async def all_rings(product: str | None = None) -> list:
                     f"ข้อมูลใหญ่เกินเพดาน ({size_mb:.1f} MB เกิน "
                     f"{settings.gistda_max_download_mb} MB)")
             payload = response.json()
+        # Coarsened here, as each outline is read, rather than kept at full
+        # resolution and simplified later. These are thousands of shapes on a
+        # small instance, and everything downstream -- the proximity check and
+        # the avoid list -- works off the rounded version anyway.
         rings = []
         for feature in (payload or {}).get("features") or []:
-            rings.extend(_rings(feature.get("geometry")))
+            for ring in _rings(feature.get("geometry")):
+                simple = _coarsen(ring, settings.gistda_avoid_grid_deg)
+                if simple:
+                    rings.append(simple)
         logger.info("โหลดพื้นที่น้ำท่วมจากดาวเทียม %.1f MB %d รูป", size_mb, len(rings))
         # A count that lands exactly on the limit means the feed stopped there,
         # not that the country did. Recorded rather than guessed at, because
@@ -368,11 +375,8 @@ async def avoid_near(bbox) -> dict | None:
     # are the ones that survive it.
     near.sort(key=area, reverse=True)
 
-    out = []
-    for ring in near[:settings.gistda_avoid_max_polygons]:
-        simple = _coarsen(ring, settings.gistda_avoid_grid_deg)
-        if simple:
-            out.append([simple])
+    # Already coarsened on the way in, so this only has to pick.
+    out = [[ring] for ring in near[:settings.gistda_avoid_max_polygons]]
     return {"type": "MultiPolygon", "coordinates": out} if out else None
 
 

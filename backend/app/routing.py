@@ -20,6 +20,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
+from . import flood_extent
 from .config import settings
 from .geo import haversine_km, in_thailand
 from .models import (
@@ -201,6 +202,23 @@ def avoid_polygons(db: Session, bbox: tuple[float, float, float, float]) -> dict
         polygons.append([ring])
 
     return {"type": "MultiPolygon", "coordinates": polygons}
+
+
+def _merge_polygons(*sources: dict | None) -> dict | None:
+    """One MultiPolygon from several, because ORS takes a single avoid shape.
+
+    Reported points and satellite outlines are different kinds of evidence and
+    are kept apart everywhere else in this app. They are merged only here, at
+    the last step before the request, because the routing engine has one slot
+    and "steer around all of this" is the only thing being asked of it. Nothing
+    downstream reads which polygon came from where, and nothing about the
+    verdict depends on this.
+    """
+    rings = []
+    for source in sources:
+        if source and source.get("coordinates"):
+            rings.extend(source["coordinates"])
+    return {"type": "MultiPolygon", "coordinates": rings} if rings else None
 
 
 async def _ors_route(origin: tuple[float, float], dest: tuple[float, float],
@@ -465,9 +483,24 @@ async def check_route(db: Session, origin: tuple[float, float], dest: tuple[floa
 
     # If the best route so far still runs through water, ask a routing engine
     # that can steer around it. This only adds an option; the plain routes stay.
-    if any(VERDICT_ORDER[a.verdict] >= VERDICT_ORDER["risky"] for a in analyses):
+    reported_risk = any(
+        VERDICT_ORDER[a.verdict] >= VERDICT_ORDER["risky"] for a in analyses)
+
+    # Does the route run through water a satellite actually saw? Asked
+    # separately from the reports and kept separate: this is an observation
+    # about an area, up to a day old, and a raised road through flooded fields
+    # is ordinary here. It is allowed to make this app go and look for a way
+    # round; it is never allowed to tell anyone a road is impassable.
+    satellite_rings = await flood_extent.all_rings()
+    through_satellite = bool(satellite_rings) and flood_extent.path_enters(
+        analyses[0].geometry.path, satellite_rings)
+
+    if reported_risk or through_satellite:
         search_bbox = path_bbox(analyses[0].geometry.path, 5.0)
-        polygons = avoid_polygons(db, search_bbox)
+        polygons = _merge_polygons(
+            avoid_polygons(db, search_bbox),
+            await flood_extent.avoid_near(search_bbox),
+        )
         if polygons and settings.ors_api_key:
             detour = await _ors_route(origin, dest, polygons)
             if detour:
@@ -486,6 +519,15 @@ async def check_route(db: Session, origin: tuple[float, float], dest: tuple[floa
     # whichever route scores best, which may be an alternative.
     best = min(analyses, key=lambda a: a.score)
     primary = analyses[0]
+
+    # Said plainly, because an unexplained detour looks like the app being
+    # fussy, and because the honest version of this sentence is the whole
+    # point: water was seen from orbit, not on this road, and not today.
+    if through_satellite:
+        seen = ("เส้นทางนี้ผ่านพื้นที่ที่ดาวเทียมเห็นน้ำในช่วงหลายวันที่ผ่านมา "
+                "ไม่ได้แปลว่าถนนผ่านไม่ได้ และไม่ใช่ภาพสด — "
+                "ถ้ามีเส้นเลี่ยงให้เลือก ระบบจะเสนอไว้ด้านล่าง")
+        degraded = f"{degraded} {seen}" if degraded else seen
 
     recommendation = None
     if best is not primary and VERDICT_ORDER[best.verdict] < VERDICT_ORDER[primary.verdict]:

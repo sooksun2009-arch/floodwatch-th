@@ -60,6 +60,7 @@ BLANK_TILE = _blank_png()
 
 _cache = Cache()
 _tile_budget: Budget | None = None
+_feature_budget: Budget | None = None
 
 
 def enabled() -> bool:
@@ -72,6 +73,18 @@ def budget() -> Budget:
         _tile_budget = Budget(settings.gistda_tiles_per_min,
                               settings.gistda_tiles_per_day)
     return _tile_budget
+
+
+def feature_budget() -> Budget:
+    """Separate from tiles, and small.
+
+    One call downloads the whole country, so this is the expensive one and
+    panning the map must not be able to spend it.
+    """
+    global _feature_budget
+    if _feature_budget is None:
+        _feature_budget = Budget(4, settings.gistda_features_per_day)
+    return _feature_budget
 
 
 # Why each kind of call last failed, reachable over HTTP. A log line inside a
@@ -212,3 +225,148 @@ async def probe_all() -> dict:
         results[key] = value
         await asyncio.sleep(0.2)
     return {"enabled": True, "results": results}
+
+
+# ------------------------------------------------------- polygons for routing
+
+def _rings(geometry: dict) -> list[list]:
+    """Outer rings only, from either a Polygon or a MultiPolygon.
+
+    Holes are dropped on purpose: a dry island inside a flooded area is not
+    worth the vertices when the whole outline is about to be rounded to a
+    200-metre grid anyway.
+    """
+    kind = (geometry or {}).get("type")
+    coords = (geometry or {}).get("coordinates") or []
+    if kind == "Polygon":
+        return [coords[0]] if coords else []
+    if kind == "MultiPolygon":
+        return [poly[0] for poly in coords if poly]
+    return []
+
+
+def _bounds(ring) -> tuple:
+    xs = [p[0] for p in ring]
+    ys = [p[1] for p in ring]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _overlaps(ring, bbox) -> bool:
+    minx, miny, maxx, maxy = _bounds(ring)
+    return not (maxx < bbox[0] or minx > bbox[2] or maxy < bbox[1] or miny > bbox[3])
+
+
+def _coarsen(ring, grid: float) -> list:
+    """Round an outline to a grid and drop points that collapse together.
+
+    ORS refuses avoid_polygons it considers too intricate, and it refuses the
+    whole request rather than the offending shape, which turns "steer around
+    the water" into "no route at all". These outlines are coarse observations
+    to begin with, and the corridor check downstream is what decides anything.
+    """
+    out = []
+    for point in ring:
+        snapped = [round(point[0] / grid) * grid, round(point[1] / grid) * grid]
+        if not out or snapped != out[-1]:
+            out.append(snapped)
+    if len(out) < 3:
+        return []
+    if out[0] != out[-1]:
+        out.append(out[0])
+    return out if len(out) >= 4 else []
+
+
+def point_in_ring(lng: float, lat: float, ring) -> bool:
+    """Ray casting.
+
+    Used to ask whether a route actually enters observed water rather than
+    merely passing near its bounding box, which in the delta would be almost
+    everywhere.
+    """
+    inside = False
+    count = len(ring)
+    for i in range(count):
+        x1, y1 = ring[i][0], ring[i][1]
+        x2, y2 = ring[(i + 1) % count][0], ring[(i + 1) % count][1]
+        if (y1 > lat) != (y2 > lat):
+            crossing = (x2 - x1) * (lat - y1) / ((y2 - y1) or 1e-12) + x1
+            if lng < crossing:
+                inside = not inside
+    return inside
+
+
+async def all_rings(product: str | None = None) -> list:
+    """Every observed flood outline in the country, cached for hours.
+
+    The endpoint takes no parameters, so there is no narrower question to ask
+    it: the whole set is fetched once and filtered here.
+    """
+    if not enabled():
+        return []
+    chosen = product_or_default(product)
+
+    async def fetch():
+        feature_budget().spend("ข้อมูลพื้นที่น้ำท่วม")
+        async with _client() as client:
+            response = await client.get(FEATURES_PATH.format(product=chosen))
+            response.raise_for_status()
+            size_mb = len(response.content) / 1_048_576
+            if size_mb > settings.gistda_max_download_mb:
+                # Refused rather than parsed. This runs on a small instance and
+                # an unbounded download is the kind of improvement that takes
+                # the flood map down.
+                raise ValueError(
+                    f"ข้อมูลใหญ่เกินเพดาน ({size_mb:.1f} MB เกิน "
+                    f"{settings.gistda_max_download_mb} MB)")
+            payload = response.json()
+        rings = []
+        for feature in (payload or {}).get("features") or []:
+            rings.extend(_rings(feature.get("geometry")))
+        logger.info("โหลดพื้นที่น้ำท่วมจากดาวเทียม %.1f MB %d รูป", size_mb, len(rings))
+        return rings
+
+    try:
+        rings = await _cache.get(f"features:{chosen}",
+                                 settings.gistda_features_cache_sec, fetch)
+        _remember_success("features")
+        return rings
+    except Exception as exc:  # noqa: BLE001 - recorded, never raised at a map
+        _remember_failure("features", exc)
+        return []
+
+
+async def avoid_near(bbox) -> dict | None:
+    """Flood outlines overlapping bbox, coarsened, as a MultiPolygon for ORS.
+
+    None means "nothing observed here", which is not the same as "this is
+    fine": the satellite sees what it sees, and in the wet season a good deal
+    of the country is under cloud.
+    """
+    rings = await all_rings()
+    near = [r for r in rings if _overlaps(r, bbox)]
+    if not near:
+        return None
+
+    def area(ring) -> float:
+        minx, miny, maxx, maxy = _bounds(ring)
+        return (maxx - minx) * (maxy - miny)
+
+    # Biggest first, so that if the cap bites, the areas most likely to matter
+    # are the ones that survive it.
+    near.sort(key=area, reverse=True)
+
+    out = []
+    for ring in near[:settings.gistda_avoid_max_polygons]:
+        simple = _coarsen(ring, settings.gistda_avoid_grid_deg)
+        if simple:
+            out.append([simple])
+    return {"type": "MultiPolygon", "coordinates": out} if out else None
+
+
+def path_enters(path, rings) -> bool:
+    """Whether any point of a route path falls inside an observed flood area."""
+    for lat, lng in path:
+        for ring in rings:
+            if point_in_ring(lng, lat, ring):
+                return True
+    return False

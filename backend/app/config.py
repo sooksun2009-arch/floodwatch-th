@@ -236,6 +236,21 @@ class Settings(BaseSettings):
     # requests per level for the same picture.
     gistda_max_zoom: int = 12
 
+    # The GeoJSON side, used to steer routes around observed water. It takes no
+    # query parameters, so there is no way to ask for one province -- the whole
+    # country arrives or nothing does. Hence a hard ceiling on the download and
+    # its own small daily budget: this is a big fetch, not a tile.
+    gistda_features_cache_sec: int = 10800
+    gistda_features_per_day: int = 200
+    gistda_max_download_mb: float = 12.0
+    # How many flood areas may be handed to the routing engine at once, and how
+    # coarsely their outlines are rounded first. ORS rejects avoid_polygons that
+    # are too many or too intricate, and it rejects the whole request rather
+    # than the offending shape -- so a route that could have been steered around
+    # water comes back as no route at all.
+    gistda_avoid_max_polygons: int = 30
+    gistda_avoid_grid_deg: float = 0.002
+
     # Shared secret for POST /api/stations/bma/ingest. The Bangkok drainage
     # site refuses connections from outside Thailand, so the container cannot
     # reach it and a relay that can has to push the readings in instead. Unset

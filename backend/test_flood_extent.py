@@ -30,7 +30,10 @@ import asyncio
 import httpx
 from fastapi.testclient import TestClient
 
+import json as _json
+
 from app import flood_extent as fe
+from app import routing
 from app.config import settings
 from app.main import app
 
@@ -45,6 +48,10 @@ def check(name, cond, extra=""):
 
 
 A_PNG = fe.BLANK_TILE
+
+
+def json_dumps(x):
+    return _json.dumps(x, ensure_ascii=False)
 
 
 def serve(handler):
@@ -74,6 +81,7 @@ def with_upstream(handler, coro):
 def reset(key="test-key"):
     fe._cache.clear()
     fe._tile_budget = None
+    fe._feature_budget = None
     fe.LAST_FAILURE.clear()
     calls.clear()
     settings.gistda_api_key = key
@@ -194,6 +202,111 @@ with TestClient(app) as c:
     check("/status บอกอายุแคช เพื่อให้หน้าเว็บบอกคนได้ว่าภาพเก่าได้แค่ไหน",
           r.get("cache_sec") == settings.gistda_tile_cache_sec, r)
     check("/status บอกงบที่ใช้ไป", "used_today" in r.get("budget", {}), r)
+
+# ------------------------------------------------- polygons handed to routing
+
+SQUARE = [[100.50, 13.70], [100.70, 13.70], [100.70, 13.85],
+          [100.50, 13.85], [100.50, 13.70]]
+
+
+def features(rings):
+    return {"features": [{"geometry": {"type": "Polygon", "coordinates": [r]}}
+                         for r in rings]}
+
+
+def serve_features(payload, size=0):
+    def handler(request):
+        body = json_dumps(payload)
+        if size:
+            body = body + " " * size
+        return httpx.Response(200, content=body.encode(),
+                              headers={"content-type": "application/geo+json"})
+    return handler
+
+
+reset()
+rings = with_upstream(serve_features(features([SQUARE])), fe.all_rings)
+check("อ่านรูปหลายเหลี่ยมจาก GeoJSON ได้", len(rings) == 1, rings)
+
+reset()
+got = with_upstream(serve_features(features([SQUARE])),
+                    lambda: fe.avoid_near((100.55, 13.75, 100.60, 13.80)))
+check("พื้นที่ที่ทับเส้นทาง -> ส่งให้ ORS หลบ",
+      got and got["type"] == "MultiPolygon" and len(got["coordinates"]) == 1, got)
+
+reset()
+far = with_upstream(serve_features(features([SQUARE])),
+                    lambda: fe.avoid_near((99.0, 8.0, 99.1, 8.1)))
+check("พื้นที่คนละจังหวัด -> ไม่ต้องหลบ (คืน None)", far is None, far)
+
+reset()
+many = [[[100.5 + i * 0.01, 13.7], [100.51 + i * 0.01, 13.7],
+         [100.51 + i * 0.01, 13.85], [100.5 + i * 0.01, 13.85],
+         [100.5 + i * 0.01, 13.7]] for i in range(80)]
+capped = with_upstream(serve_features(features(many)),
+                       lambda: fe.avoid_near((100.4, 13.6, 101.4, 13.9)))
+check("จำกัดจำนวนรูปที่ส่งให้ ORS ไม่ส่งไปทั้งประเทศ",
+      capped and len(capped["coordinates"]) <= settings.gistda_avoid_max_polygons,
+      len(capped["coordinates"]) if capped else None)
+
+# The ceiling exists because this instance is small and the endpoint takes no
+# parameters -- there is no way to ask for less.
+reset()
+huge = with_upstream(serve_features(features([SQUARE]), size=14 * 1024 * 1024),
+                     fe.all_rings)
+check("ข้อมูลใหญ่เกินเพดาน -> ไม่แตะ ไม่ล่ม คืนว่าง", huge == [], len(huge))
+check("และบอกไว้ว่าทำไมถึงไม่มีข้อมูล",
+      "ใหญ่เกิน" in fe.LAST_FAILURE.get("features", ""), fe.LAST_FAILURE)
+
+reset()
+check("รวมรูปจาก 2 แหล่งเข้าด้วยกันได้",
+      len(routing._merge_polygons(
+          {"type": "MultiPolygon", "coordinates": [[SQUARE]]},
+          {"type": "MultiPolygon", "coordinates": [[SQUARE]]})["coordinates"]) == 2)
+check("ไม่มีอะไรต้องหลบ -> ไม่ส่ง avoid ไปเลย",
+      routing._merge_polygons(None, None) is None)
+
+# ------------------------------------------- the line that must not be crossed
+
+reset()
+with TestClient(app) as c:
+    # A route through water the satellite saw, with nobody having reported
+    # anything. The satellite may send this app looking for a way round. It may
+    # not tell the driver the road is impassable: it is an area seen from
+    # orbit, up to a day old, and a raised road through flooded fields is
+    # ordinary here. If this check ever fails, an observation has been promoted
+    # into a claim it cannot support.
+    everywhere = [[[100.0, 13.0], [101.5, 13.0], [101.5, 14.5],
+                   [100.0, 14.5], [100.0, 13.0]]]
+    body = with_upstream(
+        serve_features(features(everywhere)),
+        lambda: asyncio.to_thread(
+            lambda: c.post("/api/route/check", json={
+                "origin": {"lat": 13.7460, "lng": 100.5340},
+                "destination": {"lat": 13.7650, "lng": 100.5620},
+            })),
+    )
+    if body.status_code == 200:
+        data = body.json()
+        check("ดาวเทียมเห็นน้ำ แต่ไม่มีใครแจ้ง -> คำตัดสินยังเป็น 'ไปได้'",
+              data["verdict"] == "clear", data["verdict"])
+        check("แต่บอกผู้ใช้ว่าเส้นทางผ่านพื้นที่ที่ดาวเทียมเห็นน้ำ",
+              "ดาวเทียม" in (data.get("degraded") or ""), data.get("degraded"))
+        check("และย้ำว่าไม่ได้แปลว่าถนนผ่านไม่ได้",
+              "ไม่ได้แปลว่าถนนผ่านไม่ได้" in (data.get("degraded") or ""),
+              data.get("degraded"))
+    else:
+        check("เรียก route-check ได้", False, f"{body.status_code} {body.text[:160]}")
+
+    # And with the layer off entirely, nothing about routing changes.
+    settings.gistda_api_key = ""
+    plain = c.post("/api/route/check", json={
+        "origin": {"lat": 13.7460, "lng": 100.5340},
+        "destination": {"lat": 13.7650, "lng": 100.5620},
+    })
+    check("ไม่ตั้งคีย์ -> เช็คเส้นทางทำงานเหมือนเดิมทุกอย่าง",
+          plain.status_code == 200 and "ดาวเทียม" not in (plain.json().get("degraded") or ""),
+          plain.text[:160])
 
 print()
 print("=" * 60)

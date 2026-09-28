@@ -321,21 +321,47 @@ function sendTelegram(text) {
 /**
  * หาเลขห้องแชทของคุณ — ทักหาบอทหนึ่งข้อความก่อน แล้วรันฟังก์ชันนี้
  * เลขที่ได้เอาไปใส่ TELEGRAM_CHAT_ID ด้านบน
+ *
+ * บอกสาเหตุเมื่อหาไม่เจอ ไม่ใช่แค่บอกว่าไม่เจอ: โทเคนของบอทคนละตัว
+ * กับการยังไม่ได้ทักบอท ให้ผลเหมือนกันทุกประการ แต่แก้คนละแบบ
  */
 function telegramChatId() {
   if (!TELEGRAM_BOT_TOKEN) {
     Logger.log('ยังไม่ได้ใส่ TELEGRAM_BOT_TOKEN');
     return;
   }
-  const res = UrlFetchApp.fetch(
-    'https://api.telegram.org/bot' + TELEGRAM_BOT_TOKEN + '/getUpdates',
-    { muteHttpExceptions: true });
-  const data = JSON.parse(res.getContentText());
-  const updates = data.result || [];
-  if (!updates.length) {
-    Logger.log('ยังไม่เห็นข้อความ — ทักหาบอทของคุณหนึ่งข้อความก่อน แล้วรันใหม่');
+  const api = 'https://api.telegram.org/bot' + TELEGRAM_BOT_TOKEN + '/';
+
+  // โทเคนนี้เป็นของบอทตัวไหน — คำถามแรกที่ต้องตอบ
+  const me = JSON.parse(
+    UrlFetchApp.fetch(api + 'getMe', { muteHttpExceptions: true }).getContentText());
+  if (!me.ok) {
+    Logger.log('โทเคนใช้ไม่ได้: %s', me.description || JSON.stringify(me));
     return;
   }
+  Logger.log('โทเคนนี้เป็นของบอท: @%s (%s)', me.result.username, me.result.first_name);
+
+  const res = UrlFetchApp.fetch(api + 'getUpdates', { muteHttpExceptions: true });
+  const data = JSON.parse(res.getContentText());
+  if (!data.ok) {
+    Logger.log('Telegram ปฏิเสธ: %s', data.description || JSON.stringify(data));
+    return;
+  }
+
+  const updates = data.result || [];
+  if (!updates.length) {
+    // ถ้าตั้ง webhook ไว้ Telegram จะส่งข้อความไปทางนั้นแทน getUpdates จะว่างเสมอ
+    const hook = JSON.parse(
+      UrlFetchApp.fetch(api + 'getWebhookInfo', { muteHttpExceptions: true }).getContentText());
+    if (hook.ok && hook.result && hook.result.url) {
+      Logger.log('บอทตัวนี้ตั้ง webhook ไว้ที่ %s — ข้อความจึงไม่มาทางนี้', hook.result.url);
+      return;
+    }
+    Logger.log('ยังไม่เห็นข้อความจาก @%s — ทักหาบอท "ตัวนี้" หนึ่งข้อความก่อน แล้วรันใหม่',
+               me.result.username);
+    return;
+  }
+
   const chat = updates[updates.length - 1].message.chat;
   Logger.log('เลขห้องแชทของคุณคือ %s (%s)', chat.id, chat.first_name || chat.title || '');
   return chat.id;

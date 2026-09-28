@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .geo import bbox_around, haversine_km
+from . import chatbot_en as en
 from .models import (
     Area, Camera, FloodReport, LEVEL_RANK, LEVEL_TH, ReportStatus,
 )
@@ -45,14 +46,35 @@ STOPWORDS = {
 }
 
 GREETING_PAT = re.compile(r"^(สวัสดี|หวัดดี|hello|hi|ดีครับ|ดีค่ะ|ทัก)")
-NEAR_ME_PAT = re.compile(r"(ใกล้ฉัน|ใกล้ ๆ ฉัน|ใกล้เคียง|ตรงนี้|แถวนี้|รอบตัว|ที่ฉันอยู่|บริเวณนี้)")
-CAMERA_PAT = re.compile(r"(กล้อง|cctv|วงจรปิด|ดูภาพ|ดูสด|live)", re.IGNORECASE)
-WORST_PAT = re.compile(r"(หนักสุด|หนักที่สุด|ท่วมหนัก|วิกฤต|แย่สุด|ที่ไหนท่วม|ตรงไหนท่วม|จุดไหนท่วม|ที่ไหนบ้าง)")
-HOWTO_PAT = re.compile(r"(แจ้ง.*(ยังไง|อย่างไร|ไหน)|วิธีแจ้ง|รายงาน.*(ยังไง|อย่างไร)|จะแจ้ง|อยากแจ้ง|แจ้งเหตุ)")
-STATS_PAT = re.compile(r"(กี่จุด|จำนวน|ทั้งหมดกี่|สถิติ|สรุป|ภาพรวม|มีกี่)")
-SAFETY_PAT = re.compile(r"(ขับผ่าน|ผ่านได้|ลุยน้ำ|เอารถ|รถเก๋ง|รถกระบะ|อันตราย|ปลอดภัย|ควรทำ|เตรียมตัว)")
+# English alternatives alongside the Thai. Translating the answers without
+# these was half a feature: an English question fell through to the fallback,
+# which then replied in Thai, which is the worst of both.
+NEAR_ME_PAT = re.compile(
+    r"(ใกล้ฉัน|ใกล้ ๆ ฉัน|ใกล้เคียง|ตรงนี้|แถวนี้|รอบตัว|ที่ฉันอยู่|บริเวณนี้"
+    r"|near\s*me|around\s*me|nearby|near\s*here|my\s*area|where\s*i\s*am)",
+    re.IGNORECASE)
+CAMERA_PAT = re.compile(
+    r"(กล้อง|cctv|วงจรปิด|ดูภาพ|ดูสด|live|camera|webcam)", re.IGNORECASE)
+WORST_PAT = re.compile(
+    r"(หนักสุด|หนักที่สุด|ท่วมหนัก|วิกฤต|แย่สุด|ที่ไหนท่วม|ตรงไหนท่วม|จุดไหนท่วม|ที่ไหนบ้าง"
+    r"|worst|most\s*flooded|where\s*is\s*it\s*(bad|worst)|badly\s*flooded"
+    r"|which\s*areas?|hardest\s*hit)",
+    re.IGNORECASE)
+HOWTO_PAT = re.compile(
+    r"(แจ้ง.*(ยังไง|อย่างไร|ไหน)|วิธีแจ้ง|รายงาน.*(ยังไง|อย่างไร)|จะแจ้ง|อยากแจ้ง|แจ้งเหตุ"
+    r"|how\s*(do|can)\s*i\s*report|how\s*to\s*report|report\s*flooding)",
+    re.IGNORECASE)
+STATS_PAT = re.compile(
+    r"(กี่จุด|จำนวน|ทั้งหมดกี่|สถิติ|สรุป|ภาพรวม|มีกี่"
+    r"|how\s*many|summary|overview|statistics)", re.IGNORECASE)
+SAFETY_PAT = re.compile(
+    r"(ขับผ่าน|ผ่านได้|ลุยน้ำ|เอารถ|รถเก๋ง|รถกระบะ|อันตราย|ปลอดภัย|ควรทำ|เตรียมตัว"
+    r"|can\s*i\s*drive|safe\s*to\s*drive|drive\s*through|is\s*it\s*safe)",
+    re.IGNORECASE)
 DEPTH_PAT = re.compile(r"(\d+)\s*(ซม|เซน|เซนติเมตร|cm|เมตร|ม\.)")
-HELP_PAT = re.compile(r"(ทำอะไรได้|ช่วยอะไร|ใช้ยังไง|คำสั่ง|help|เมนู)")
+HELP_PAT = re.compile(
+    r"(ทำอะไรได้|ช่วยอะไร|ใช้ยังไง|คำสั่ง|help|เมนู|what\s*can\s*you\s*do)",
+    re.IGNORECASE)
 
 DEFAULT_SUGGESTIONS = [
     ChatSuggestion(label="เช็คเส้นทางบ้าน → ที่ทำงาน",
@@ -139,7 +161,7 @@ def extract_route_endpoints(text: str) -> tuple[str, str] | None:
     return None
 
 
-def answer_route_needs_endpoints() -> ChatResult:
+def answer_route_needs_endpoints(lang: str = "th") -> ChatResult:
     return ChatResult(intent="route_need_endpoints", answer=(
         "บอกต้นทางกับปลายทางมาได้เลยครับ เช่น\n"
         "• \"จากบางนาไปรามคำแหง ท่วมไหม\"\n"
@@ -149,7 +171,7 @@ def answer_route_needs_endpoints() -> ChatResult:
     ))
 
 
-def answer_route_unresolved(missing: list[str]) -> ChatResult:
+def answer_route_unresolved(missing: list[str], lang: str = "th") -> ChatResult:
     names = " และ ".join(f"\"{m}\"" for m in missing)
     return ChatResult(intent="route_unresolved", answer=(
         f"ผมหาตำแหน่งของ {names} ไม่เจอครับ ลองพิมพ์ให้ละเอียดขึ้น "
@@ -312,7 +334,14 @@ def match_place(db: Session, text: str) -> PlaceMatch | None:
             if place.kind in ("province", "district", "landmark"):
                 score += 0.05
 
-            if score > 0.68 and (best is None or score > best.score):
+            # A Latin-script question matched against Thai place names can
+            # only ever score on fuzzy similarity, and fuzzy similarity is how
+            # "bang na" came back as จังหวัดพังงา -- then answered confidently
+            # about the wrong province, 700 km away. On a flood map that is
+            # not a cosmetic bug. Latin input has to match much harder.
+            latin = bool(re.search(r"[a-z]", phrase))
+            floor = 0.92 if latin else 0.68
+            if score > floor and (best is None or score > best.score):
                 best = PlaceMatch(name=place.name, kind=place.kind, lat=place.lat,
                                   lng=place.lng, province_id=place.province_id, score=score)
     return best
@@ -367,9 +396,20 @@ def cameras_near(db: Session, lat: float, lng: float, radius_km: float = 10.0,
 
 # ------------------------------------------------------------------ phrasing
 
-def _report_lines(reports: list[FloodReport]) -> str:
+def _report_lines(reports: list[FloodReport], lang: str = "th") -> str:
     lines = []
     for r in reports:
+        if lang == "en":
+            where = (r.place or r.district
+                     or (r.province.name_th if r.province else en.tr("where.unknown")))
+            label = en.level(r.level)
+            extra = (en.tr("line.measured", depth=r.depth_cm,
+                           inches=round(r.depth_cm / 2.54)) if r.depth_cm else "")
+            trust = (en.tr("line.confirmed", count=r.confirm_count)
+                     if r.confirm_count else "")
+            lines.append(en.tr("line.report", where=where, label=label,
+                               extra=extra, trust=trust))
+            continue
         where = r.place or r.district or (r.province.name_th if r.province else "ไม่ระบุจุด")
         label = LEVEL_TH.get(r.level, r.level)
         extra = f" วัดได้ {r.depth_cm} ซม." if r.depth_cm else ""
@@ -378,13 +418,17 @@ def _report_lines(reports: list[FloodReport]) -> str:
     return "\n".join(lines)
 
 
+def _safety_note(lang: str) -> str:
+    return en.SAFETY_NOTE if lang == "en" else SAFETY_NOTE
+
+
 SAFETY_NOTE = (
     "\n\nข้อควรระวัง: น้ำสูงเกิน 30 ซม. รถเก๋งมีโอกาสเครื่องดับ และน้ำไหลแรงเพียง "
     "15 ซม. ก็ทำให้คนล้มได้ ถ้าไม่จำเป็นให้เลี่ยงเส้นทาง"
 )
 
 
-def answer_flood_at_place(db: Session, place: PlaceMatch) -> ChatResult:
+def answer_flood_at_place(db: Session, place: PlaceMatch, lang: str = "th") -> ChatResult:
     if place.kind == "province" and place.province_id:
         reports = reports_in_province(db, place.province_id)
         scope = f"จังหวัด{place.name}" if place.name != "กรุงเทพมหานคร" else place.name
@@ -399,22 +443,32 @@ def answer_flood_at_place(db: Session, place: PlaceMatch) -> ChatResult:
     if not reports:
         cameras = (cameras_near(db, place.lat, place.lng)
                    if place.lat is not None and place.lng is not None else [])
-        answer = (f"ตอนนี้ยังไม่มีรายงานน้ำท่วมที่ยืนยันแล้วในพื้นที่ {scope} ครับ\n\n"
-                  "หมายเหตุ: หมายถึง \"ยังไม่มีใครแจ้ง\" ไม่ใช่ \"ยืนยันว่าไม่ท่วม\" "
-                  "ถ้าคุณเห็นน้ำท่วมอยู่ ช่วยกดปุ่มแจ้งเหตุเพื่อเตือนคนอื่นด้วยครับ")
-        if cameras:
-            answer += f"\n\nมีกล้อง CCTV ใกล้พื้นที่นี้ {len(cameras)} ตัว กดดูภาพสดได้เลย"
+        if lang == "en":
+            answer = en.tr("place.none", scope=scope)
+            if cameras:
+                answer += en.tr("place.cameras", count=len(cameras))
+        else:
+            answer = (f"ตอนนี้ยังไม่มีรายงานน้ำท่วมที่ยืนยันแล้วในพื้นที่ {scope} ครับ\n\n"
+                      "หมายเหตุ: หมายถึง \"ยังไม่มีใครแจ้ง\" ไม่ใช่ \"ยืนยันว่าไม่ท่วม\" "
+                      "ถ้าคุณเห็นน้ำท่วมอยู่ ช่วยกดปุ่มแจ้งเหตุเพื่อเตือนคนอื่นด้วยครับ")
+            if cameras:
+                answer += f"\n\nมีกล้อง CCTV ใกล้พื้นที่นี้ {len(cameras)} ตัว กดดูภาพสดได้เลย"
         return ChatResult(answer=answer, intent="flood_at_place", matched_place=place.name,
                           cameras=[camera_to_out(c, (place.lat, place.lng)) for c in cameras])
 
     worst = worst_level([r.level for r in reports])
     impassable = [r for r in reports if r.level in ("severe", "closed") or r.passable is False]
-    headline = (f"พื้นที่ {scope} มีรายงานน้ำท่วมที่ยืนยันแล้ว {len(reports)} จุด "
-                f"ระดับหนักสุดคือ {LEVEL_TH.get(worst, worst)}")
-    answer = f"{headline}\n\n{_report_lines(reports)}"
+    if lang == "en":
+        headline = en.tr("place.headline", scope=scope, count=len(reports),
+                         worst=en.level(worst))
+    else:
+        headline = (f"พื้นที่ {scope} มีรายงานน้ำท่วมที่ยืนยันแล้ว {len(reports)} จุด "
+                    f"ระดับหนักสุดคือ {LEVEL_TH.get(worst, worst)}")
+    answer = f"{headline}\n\n{_report_lines(reports, lang)}"
     if impassable:
-        answer += f"\n\nมี {len(impassable)} จุดที่รถผ่านไม่ได้หรือปิดการจราจร ควรเลี่ยงเส้นทาง"
-    answer += SAFETY_NOTE
+        answer += (en.tr("place.impassable", count=len(impassable)) if lang == "en"
+                   else f"\n\nมี {len(impassable)} จุดที่รถผ่านไม่ได้หรือปิดการจราจร ควรเลี่ยงเส้นทาง")
+    answer += _safety_note(lang)
 
     cameras = (cameras_near(db, place.lat, place.lng, radius_km=8.0, limit=3)
                if place.lat is not None and place.lng is not None else [])
@@ -425,10 +479,12 @@ def answer_flood_at_place(db: Session, place: PlaceMatch) -> ChatResult:
     )
 
 
-def answer_near_me(db: Session, lat: float | None, lng: float | None) -> ChatResult:
+def answer_near_me(db: Session, lat: float | None, lng: float | None,
+                   lang: str = "th") -> ChatResult:
     if lat is None or lng is None:
         return ChatResult(
-            answer=("ผมยังไม่ทราบตำแหน่งของคุณครับ กดปุ่ม \"ใช้ตำแหน่งของฉัน\" "
+            answer=(en.tr("near.noLocation") if lang == "en" else
+                    "ผมยังไม่ทราบตำแหน่งของคุณครับ กดปุ่ม \"ใช้ตำแหน่งของฉัน\" "
                     "ที่มุมแผนที่เพื่ออนุญาตการเข้าถึงตำแหน่ง หรือพิมพ์ชื่อถนน/เขต/จังหวัด "
                     "มาก็ได้ เช่น \"น้ำท่วมแถวรามคำแหงไหม\""),
             intent="need_location",
@@ -438,14 +494,24 @@ def answer_near_me(db: Session, lat: float | None, lng: float | None) -> ChatRes
     cameras = cameras_near(db, lat, lng, radius_km=10.0, limit=4)
 
     if not reports:
-        answer = ("รอบตัวคุณในรัศมี 5 กม. ยังไม่มีรายงานน้ำท่วมที่ยืนยันแล้วครับ\n\n"
-                  "ถ้าคุณเห็นน้ำท่วมตรงหน้า ช่วยกดแจ้งเหตุให้คนอื่นรู้ด้วยนะครับ")
-        if cameras:
-            answer += f"\n\nมีกล้อง CCTV ใกล้คุณ {len(cameras)} ตัว ดูภาพสดได้จากรายการด้านล่าง"
+        if lang == "en":
+            answer = en.tr("near.none")
+            if cameras:
+                answer += en.tr("near.cameras", count=len(cameras))
+        else:
+            answer = ("รอบตัวคุณในรัศมี 5 กม. ยังไม่มีรายงานน้ำท่วมที่ยืนยันแล้วครับ\n\n"
+                      "ถ้าคุณเห็นน้ำท่วมตรงหน้า ช่วยกดแจ้งเหตุให้คนอื่นรู้ด้วยนะครับ")
+            if cameras:
+                answer += f"\n\nมีกล้อง CCTV ใกล้คุณ {len(cameras)} ตัว ดูภาพสดได้จากรายการด้านล่าง"
     else:
         worst = worst_level([r.level for r in reports])
-        answer = (f"ในรัศมี 5 กม. จากตำแหน่งคุณ มีน้ำท่วม {len(reports)} จุด "
-                  f"หนักสุด {LEVEL_TH.get(worst, worst)}\n\n{_report_lines(reports)}{SAFETY_NOTE}")
+        if lang == "en":
+            answer = (en.tr("near.some", count=len(reports), worst=en.level(worst))
+                      + _report_lines(reports, lang) + _safety_note(lang))
+        else:
+            answer = (f"ในรัศมี 5 กม. จากตำแหน่งคุณ มีน้ำท่วม {len(reports)} จุด "
+                      f"หนักสุด {LEVEL_TH.get(worst, worst)}\n\n"
+                      f"{_report_lines(reports)}{SAFETY_NOTE}")
 
     return ChatResult(
         answer=answer, intent="flood_near_me",
@@ -455,11 +521,12 @@ def answer_near_me(db: Session, lat: float | None, lng: float | None) -> ChatRes
     )
 
 
-def answer_worst(db: Session) -> ChatResult:
+def answer_worst(db: Session, lang: str = "th") -> ChatResult:
     rows = db.execute(_active_query().limit(200)).scalars().all()
     if not rows:
         return ChatResult(
-            answer=("ตอนนี้ไม่มีรายงานน้ำท่วมที่ยืนยันแล้วในระบบเลยครับ — "
+            answer=(en.tr("worst.none") if lang == "en" else
+                    "ตอนนี้ไม่มีรายงานน้ำท่วมที่ยืนยันแล้วในระบบเลยครับ — "
                     "ถือเป็นข่าวดี แต่ถ้าคุณเจอจุดน้ำท่วม ช่วยแจ้งเข้ามาได้เลย"),
             intent="worst_areas",
         )
@@ -470,23 +537,30 @@ def answer_worst(db: Session) -> ChatResult:
         key = r.province.name_th if r.province else "ไม่ระบุจังหวัด"
         by_province[key] = by_province.get(key, 0) + 1
     ranked = sorted(by_province.items(), key=lambda kv: -kv[1])[:5]
-    province_line = ", ".join(f"{name} {count} จุด" for name, count in ranked)
-
-    answer = (f"ตอนนี้มีน้ำท่วมที่ยืนยันแล้วรวม {len(rows)} จุด\n\n"
-              f"จุดที่หนักที่สุด:\n{_report_lines(top)}\n\n"
-              f"จังหวัดที่มีรายงานมากที่สุด: {province_line}{SAFETY_NOTE}")
+    if lang == "en":
+        province_line = ", ".join(en.tr("line.province", name=name, count=count)
+                                  for name, count in ranked)
+        answer = en.tr("worst.body", count=len(rows),
+                       lines=_report_lines(top, lang),
+                       provinces=province_line) + _safety_note(lang)
+    else:
+        province_line = ", ".join(f"{name} {count} จุด" for name, count in ranked)
+        answer = (f"ตอนนี้มีน้ำท่วมที่ยืนยันแล้วรวม {len(rows)} จุด\n\n"
+                  f"จุดที่หนักที่สุด:\n{_report_lines(top)}\n\n"
+                  f"จังหวัดที่มีรายงานมากที่สุด: {province_line}{SAFETY_NOTE}")
     return ChatResult(answer=answer, intent="worst_areas",
                       reports=[report_to_out(r) for r in top])
 
 
 def answer_cameras(db: Session, place: PlaceMatch | None, lat: float | None,
-                   lng: float | None) -> ChatResult:
+                   lng: float | None, lang: str = "th") -> ChatResult:
     origin = None
-    scope = "ทั่วประเทศ"
+    scope = en.tr("scope.country") if lang == "en" else "ทั่วประเทศ"
     if place and place.lat is not None:
         origin, scope = (place.lat, place.lng), place.name
     elif lat is not None and lng is not None:
-        origin, scope = (lat, lng), "ตำแหน่งของคุณ"
+        origin, scope = (lat, lng), (en.tr("scope.you") if lang == "en"
+                                     else "ตำแหน่งของคุณ")
 
     if origin:
         cams = cameras_near(db, origin[0], origin[1], radius_km=25.0, limit=6)
@@ -499,7 +573,8 @@ def answer_cameras(db: Session, place: PlaceMatch | None, lat: float | None,
         total = db.execute(
             select(func.count(Camera.id)).where(Camera.is_active.is_(True))
         ).scalar() or 0
-        answer = (f"ยังไม่มีกล้อง CCTV ที่ลงทะเบียนไว้ใกล้ {scope} ครับ "
+        answer = (en.tr("cams.none", scope=scope, total=total) if lang == "en" else
+                  f"ยังไม่มีกล้อง CCTV ที่ลงทะเบียนไว้ใกล้ {scope} ครับ "
                   f"(ทั้งระบบมี {total} ตัว)\n\n"
                   "ถ้าคุณทราบ URL กล้องในพื้นที่ แจ้งผู้ดูแลระบบให้เพิ่มเข้ามาได้")
         return ChatResult(answer=answer, intent="cameras", matched_place=scope)
@@ -507,13 +582,18 @@ def answer_cameras(db: Session, place: PlaceMatch | None, lat: float | None,
     lines = []
     for c in cams:
         dist = f" ({haversine_km(origin[0], origin[1], c.lat, c.lng):.1f} กม.)" if origin else ""
-        demo = " [สตรีมตัวอย่าง]" if c.is_demo else ""
+        demo = ((en.tr("line.demo") if lang == "en" else " [สตรีมตัวอย่าง]")
+                if c.is_demo else "")
         org = f" — {c.owner_org}" if c.owner_org else ""
         lines.append(f"• {c.name}{dist}{org}{demo}")
 
-    answer = (f"กล้อง CCTV ใกล้ {scope} ที่ดูได้ตอนนี้ {len(cams)} ตัว:\n"
-              + "\n".join(lines)
-              + "\n\nกดที่ชื่อกล้องด้านล่างเพื่อเปิดภาพสดครับ")
+    if lang == "en":
+        answer = en.tr("cams.body", count=len(cams), scope=scope,
+                       lines="\n".join(lines))
+    else:
+        answer = (f"กล้อง CCTV ใกล้ {scope} ที่ดูได้ตอนนี้ {len(cams)} ตัว:\n"
+                  + "\n".join(lines)
+                  + "\n\nกดที่ชื่อกล้องด้านล่างเพื่อเปิดภาพสดครับ")
     return ChatResult(
         answer=answer, intent="cameras", matched_place=scope,
         cameras=[camera_to_out(c, origin, nearby_flood_level(db, c.lat, c.lng)) for c in cams],
@@ -625,46 +705,75 @@ def answer_fallback(db: Session) -> ChatResult:
 
 # ------------------------------------------------------------------ dispatch
 
-def route(db: Session, text: str, lat: float | None, lng: float | None) -> ChatResult:
-    """Pick an intent. Order matters — the most specific pattern wins."""
+# The intents that have English wording. Anything else answers in Thai, and
+# says so rather than leaving an English reader to guess whether the assistant
+# broke or simply switched languages.
+TRANSLATED_INTENTS = frozenset({
+    "flood_at_place", "flood_near_me", "worst_areas", "cameras",
+    "need_location", "route_need_endpoints", "route_unresolved", "route",
+})
+
+
+def mark_untranslated(result: ChatResult, lang: str) -> ChatResult:
+    if lang == "en" and result.intent not in TRANSLATED_INTENTS:
+        result.answer = result.answer + en.NOT_TRANSLATED
+    return result
+
+
+def route(db: Session, text: str, lat: float | None, lng: float | None,
+          lang: str = "th") -> ChatResult:
+    """Pick an intent. Order matters — the most specific pattern wins.
+
+    `lang` reaches only the four answers that have been translated. Everything
+    else replies in Thai and is marked, by `_mark_untranslated` below, so an
+    English reader is told rather than left to wonder why the assistant
+    switched languages mid-conversation.
+    """
     raw = text.strip()
     cleaned = normalize(raw)
 
     if HELP_PAT.search(cleaned):
-        return answer_help()
+        return mark_untranslated(answer_help(), lang)
     if HOWTO_PAT.search(cleaned):
-        return answer_howto()
+        return mark_untranslated(answer_howto(), lang)
     # Safety is checked before the route hint: "ผ่านได้ไหม" appears in both, and
     # a question carrying a depth in centimetres is asking about the water, not
     # about a trip.
     if SAFETY_PAT.search(cleaned) or (DEPTH_PAT.search(cleaned) and "ท่วม" not in cleaned):
-        return answer_safety(cleaned)
+        return mark_untranslated(answer_safety(cleaned), lang)
     # Route questions are resolved by the caller (they need async geocoding), so
     # reaching here with a trip-shaped sentence means the endpoints were missing
     # or unresolvable.
     if ROUTE_HINT_PAT.search(cleaned) and extract_route_endpoints(raw) is None:
-        return answer_route_needs_endpoints()
+        return answer_route_needs_endpoints(lang)
 
+    # A romanised place name never matches a Thai gazetteer on similarity, so
+    # it is translated to Thai before the lookup rather than left to fuzzy
+    # scoring -- which is what produced จังหวัดพังงา for "bang na".
     place = match_place(db, raw)
+    if place is None:
+        thai_name = en.to_thai_place(raw)
+        if thai_name:
+            place = match_place(db, thai_name)
 
     if CAMERA_PAT.search(cleaned):
-        return answer_cameras(db, place, lat, lng)
+        return answer_cameras(db, place, lat, lng, lang)
     if NEAR_ME_PAT.search(cleaned):
-        return answer_near_me(db, lat, lng)
+        return answer_near_me(db, lat, lng, lang)
     if WORST_PAT.search(cleaned) and place is None:
-        return answer_worst(db)
+        return answer_worst(db, lang)
     if STATS_PAT.search(cleaned) and place is None:
-        return answer_stats(db)
+        return mark_untranslated(answer_stats(db), lang)
     if place is not None:
-        return answer_flood_at_place(db, place)
+        return answer_flood_at_place(db, place, lang)
     if GREETING_PAT.search(cleaned):
-        return answer_help()
+        return mark_untranslated(answer_help(), lang)
     if "ท่วม" in cleaned or "น้ำ" in cleaned:
         # ถามเรื่องน้ำท่วมแต่ไม่ระบุที่ — ถ้ารู้ตำแหน่งก็ตอบรอบตัว ไม่รู้ก็สรุปภาพรวม
         if lat is not None and lng is not None:
-            return answer_near_me(db, lat, lng)
-        return answer_worst(db)
-    return answer_fallback(db)
+            return answer_near_me(db, lat, lng, lang)
+        return answer_worst(db, lang)
+    return mark_untranslated(answer_fallback(db), lang)
 
 
 # ------------------------------------------------------------------ optional LLM polish

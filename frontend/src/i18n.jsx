@@ -420,7 +420,7 @@ const STRINGS = {
     'chat.tooFast': 'That was a lot of questions at once. Give it a moment and try again.',
     'chat.failed': 'Sorry, something went wrong. Please ask again.',
     'chat.greeting': 'Hello. I can check flooding for you.\n\nAsk in English or Thai, for example "Bang Na to Ramkhamhaeng, is it flooded?" or "water is 40 cm, can I drive through?"',
-    'chat.answersInThai': 'Answers come back in Thai — the assistant has not been translated yet. Your question can be in either language.',
+    'chat.answersInThai': 'Flooding near a place, near you, the worst areas and cameras all answer in English. Other questions still come back in Thai, and will say so.',
     'chat.s1': 'Check home → work',
     'chat.s2': 'Any flooding near me?',
     'chat.s3': 'Where is it worst right now?',

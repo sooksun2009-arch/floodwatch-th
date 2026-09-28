@@ -343,6 +343,9 @@ class GeocodeOut(BaseModel):
 
 class ChatIn(BaseModel):
     message: str = Field(min_length=1, max_length=500)
+    # Which language to answer in. Only the common questions have English
+    # wording; the rest reply in Thai and say so.
+    lang: str = Field(default="th", pattern="^(th|en)$")
     session_id: str | None = Field(default=None, max_length=64)
     lat: float | None = None
     lng: float | None = None

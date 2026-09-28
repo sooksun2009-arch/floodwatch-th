@@ -87,6 +87,9 @@ export default function ChatWidget({ open, setOpen, pendingMessage, onConsumed, 
     try {
       const data = await api.chat({
         message,
+        // Which language to answer in. Only the common questions have English
+        // wording; the rest come back in Thai and say so.
+        lang,
         session_id: sessionId,
         lat: coords?.lat,
         lng: coords?.lng,

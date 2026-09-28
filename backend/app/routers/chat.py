@@ -92,7 +92,7 @@ async def ask(payload: ChatIn, request: Request, db: Session = Depends(get_db),
 
     response = await _try_route_answer(db, message, payload.lat, payload.lng)
     if response is None:
-        result = chatbot.route(db, message, payload.lat, payload.lng)
+        result = chatbot.route(db, message, payload.lat, payload.lng, payload.lang)
         answer = result.answer
 
         polished = await chatbot.polish_with_llm(message, result.answer)

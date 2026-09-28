@@ -207,25 +207,44 @@ const check = (name, ok, extra = '') => {
   const settle = () => new Promise((r) => setTimeout(r, 450))
   const all = await drawn('report-dots')
 
-  if (all >= 2) {
-    check('กดคำอธิบายสี "10-30 ซม." ได้', await clickLegend('10-30 ซม.'))
+  // Which levels are actually on the map right now. The old version hardcoded
+  // "10-30 ซม." and "เกิน 60 ซม.", so on production -- where the live reports
+  // happened to be only น้ำขัง and 10-30 ซม. -- selecting both could never add
+  // up to the total and the filter was reported broken when it was not. The
+  // test has to ask the map what is there, not assume the seed data.
+  const LEVEL_LABELS = {
+    normal: 'ปกติ', puddle: 'น้ำขัง', shallow: '10-30 ซม.',
+    deep: '30-60 ซม.', severe: 'เกิน 60 ซม.', closed: 'ปิดถนน',
+  }
+  const present = await page.evaluate(() =>
+    [...new Set(window.__fwMap
+      .queryRenderedFeatures({ layers: ['report-dots'] })
+      .map((f) => f.properties.level))])
+
+  if (all >= 2 && present.length >= 2) {
+    const [first, second] = present
+    const firstLabel = LEVEL_LABELS[first]
+    const secondLabel = LEVEL_LABELS[second]
+
+    check(`กดคำอธิบายสี "${firstLabel}" ได้`, await clickLegend(firstLabel))
     await settle()
-    const onlyShallow = await drawn('report-dots')
-    check('เลือกหนึ่งชนิด -> เห็นเฉพาะชนิดนั้น', onlyShallow > 0 && onlyShallow < all,
-      `ทั้งหมด ${all} -> เลือกแล้ว ${onlyShallow}`)
+    const onlyFirst = await drawn('report-dots')
+    check('เลือกหนึ่งชนิด -> เห็นเฉพาะชนิดนั้น', onlyFirst > 0 && onlyFirst < all,
+      `ทั้งหมด ${all} -> เลือกแล้ว ${onlyFirst}`)
 
     check('บอกว่ากำลังกรองอยู่', await page.evaluate(
       () => document.body.innerText.includes('แสดงเฉพาะ')))
 
-    await clickLegend('เกิน 60 ซม.')
+    await clickLegend(secondLabel)
     await settle()
-    check('เลือกเพิ่มได้ -> เห็นทั้งสองชนิด', (await drawn('report-dots')) === all,
-      `${await drawn('report-dots')} vs ${all}`)
+    const both = await drawn('report-dots')
+    check('เลือกเพิ่มได้ -> เห็นมากขึ้น', both > onlyFirst && both <= all,
+      `หนึ่งชนิด ${onlyFirst} -> สองชนิด ${both} (ทั้งหมด ${all})`)
 
-    await clickLegend('10-30 ซม.')
+    await clickLegend(firstLabel)
     await settle()
-    check('กดซ้ำเพื่อเอาออกจากที่เลือก', (await drawn('report-dots')) < all,
-      `${await drawn('report-dots')} vs ${all}`)
+    check('กดซ้ำเพื่อเอาออกจากที่เลือก', (await drawn('report-dots')) < both,
+      `${await drawn('report-dots')} vs ${both}`)
 
     await page.evaluate(() => {
       const b = [...document.querySelectorAll('button')].find((x) =>
@@ -237,7 +256,9 @@ const check = (name, ok, extra = '') => {
     check('ล้างตัวกรอง -> กลับมาครบ', (await drawn('report-dots')) === all,
       `${await drawn('report-dots')} vs ${all}`)
   } else {
-    console.log(`      (ข้ามเทสตัวกรอง: มีหมุดบนจอ ${all} จุด ต้องการอย่างน้อย 2)`)
+    console.log('      (ข้ามเทสตัวกรอง: มีหมุดบนจอ ' + all + ' จุด '
+      + 'ใน ' + present.length + ' ระดับ — ต้องการอย่างน้อย 2 จุด 2 ระดับ. '
+      + 'ข้าม ไม่ใช่ผ่าน)')
   }
 
   // The share button, both ways it can work. On a Thai phone the native sheet
@@ -480,6 +501,12 @@ const check = (name, ok, extra = '') => {
   if (state.layers && state.layers['station-dots'] > 0) {
     const clicked = await page.evaluate(() => {
       const map = window.__fwMap
+      // Close whatever is already open first. The report popup from the test
+      // above was still on screen, so the reads below picked up its content
+      // instead of the gauge's and reported the gauge broken for a week while
+      // it worked perfectly in production.
+      document.querySelectorAll('.maplibregl-popup-close-button')
+        .forEach((b) => b.click())
       const feature = map.queryRenderedFeatures({ layers: ['station-dots'] })[0]
       if (!feature) return null
       const point = map.project(feature.geometry.coordinates)
@@ -494,11 +521,17 @@ const check = (name, ok, extra = '') => {
     check('กดหมุดสถานีแล้วเปิด popup ได้', Boolean(clicked), 'ไม่พบหมุดสถานีให้กด')
 
     if (clicked) {
+      // Wait for the popup that belongs to THIS gauge, not for any popup.
+      // Reading whichever one happens to be first in the DOM is how the
+      // previous version read a leftover report popup and, when the timing
+      // shifted, an empty one.
       let text = ''
       for (let i = 0; i < 40; i++) {
-        text = await page.evaluate(
-          () => document.querySelector('.maplibregl-popup-content')?.textContent || '',
-        )
+        text = await page.evaluate((name) => {
+          const mine = [...document.querySelectorAll('.maplibregl-popup-content')]
+            .find((el) => el.textContent.includes(name.slice(0, 8)))
+          return mine ? mine.textContent : ''
+        }, clicked)
         if (text && !text.includes('กำลังดูแนวโน้ม')) break
         await new Promise((r) => setTimeout(r, 500))
       }

@@ -18,7 +18,10 @@ function FloodExtentCaption({ product }) {
                  '7days': '7 วันที่ผ่านมา', '30days': '30 วันที่ผ่านมา' }[product]
     || 'ช่วงที่ผ่านมา'
   return (
-    <div className="pointer-events-none absolute inset-x-3 bottom-16 z-10 mx-auto max-w-md rounded-xl border border-amber-800/60 bg-amber-950/85 px-3 py-2 text-xs leading-relaxed text-amber-100 backdrop-blur sm:inset-x-auto sm:left-3 sm:mx-0">
+    // Top centre. Bottom-left sat on the legend and covered the colour it was
+    // explaining; the two other corners hold the zoom controls and the report
+    // button. This is the only free edge.
+    <div className="pointer-events-none absolute left-1/2 top-3 z-10 w-[min(28rem,calc(100%-6.5rem))] -translate-x-1/2 rounded-xl border border-amber-800/60 bg-amber-950/90 px-3 py-2 text-xs leading-relaxed text-amber-100 backdrop-blur">
       พื้นที่สีส้มคือบริเวณที่<b>ดาวเทียมเห็นน้ำใน{span}</b> — ไม่ใช่ภาพสด
       และ<b>ไม่ได้แปลว่าถนนในนั้นผ่านไม่ได้</b> ถนนยกสูงกลางทุ่งที่น้ำท่วมเป็นเรื่องปกติ
       <span className="mt-1 block text-amber-300/80">ข้อมูล GISTDA · ใช้ประกอบการตัดสินใจ ไม่ใช่คำยืนยัน</span>

@@ -223,10 +223,14 @@ class Settings(BaseSettings):
     # spends quota to receive a byte-identical picture. The radar's ten minutes
     # is the wrong number here and copying it would have been the easy mistake.
     gistda_tile_cache_sec: int = 21600
-    # Unpublished quota, so start low and raise it once the real ceiling is
-    # known. Tiles get their own budget for the usual reason: panning must not
-    # be able to starve anything else drawn from this key.
-    gistda_tiles_per_min: int = 20
+    # Unpublished quota, so the daily figure stays conservative -- with a six
+    # hour cache, repeat views of the same area cost nothing anyway.
+    #
+    # The per-minute figure is not a safety margin, it is a floor: one 1400x900
+    # screen is about 25 tiles, so 20 meant the first screenful ran out and the
+    # layer went blank everywhere. A budget low enough to break normal use is
+    # not protecting anything, it is just a bug with a good excuse.
+    gistda_tiles_per_min: int = 60
     gistda_tiles_per_day: int = 2000
     # Past this the tiles subdivide without getting sharper — four times the
     # requests per level for the same picture.

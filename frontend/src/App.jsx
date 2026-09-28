@@ -1,5 +1,6 @@
-import { Suspense, lazy, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom'
+import { api } from './api'
 import { AuthProvider, useAuth } from './auth'
 import { useT } from './i18n'
 import Home from './pages/Home'
@@ -123,9 +124,46 @@ ${url}`)
   )
 }
 
+/**
+ * How many reports are waiting for a moderator, refreshed while the tab is open.
+ *
+ * Anything with a photo publishes itself, so this is usually zero and the
+ * badge is usually absent — which is the point. When something does land in
+ * the queue it is because the app was not confident enough to publish it, and
+ * that is exactly the case a moderator should not have to go looking for.
+ */
+function usePendingCount(enabled) {
+  const [pending, setPending] = useState(0)
+
+  useEffect(() => {
+    if (!enabled) {
+      setPending(0)
+      return undefined
+    }
+    let alive = true
+    const read = () =>
+      api
+        .summary()
+        .then((s) => alive && setPending(Number(s?.pending_moderation) || 0))
+        // A failed poll leaves the last number alone rather than clearing the
+        // badge: "the count could not be read" must not look like "nothing is
+        // waiting".
+        .catch(() => {})
+    read()
+    const timer = setInterval(read, 60000)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [enabled])
+
+  return pending
+}
+
 function Nav() {
   const { user, logout, isModerator } = useAuth()
   const { t } = useT()
+  const pending = usePendingCount(isModerator)
   return (
     <header className="sticky top-0 z-30 border-b border-slate-800 bg-slate-950/90 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center gap-2 px-3 py-2.5 sm:px-4">
@@ -144,8 +182,24 @@ function Nav() {
             {t('nav.stats')}
           </NavLink>
           {isModerator && (
-            <NavLink to="/admin" className={tabClass}>
+            <NavLink
+              to="/admin"
+              className={(state) => `${tabClass(state)} relative`}
+              title={pending ? t('nav.pendingTitle') : undefined}
+            >
               {t('nav.admin')}
+              {pending > 0 && (
+                <>
+                  <span className="ml-1.5 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-orange-600 px-1.5 py-0.5 text-[11px] font-bold leading-none text-white">
+                    {pending > 99 ? '99+' : pending}
+                  </span>
+                  {/* Said in words as well as a number, because a coloured
+                      circle beside a word is not announced to a screen
+                      reader and this is the one thing here that is waiting
+                      on a person. */}
+                  <span className="sr-only">{t('nav.pending', { n: pending })}</span>
+                </>
+              )}
             </NavLink>
           )}
         </nav>

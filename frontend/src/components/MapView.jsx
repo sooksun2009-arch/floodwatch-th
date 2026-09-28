@@ -228,6 +228,7 @@ export default function MapView({
   onError,
   pickMode = false,
   showRadar = false,
+  showFloodExtent = false,
   selected = EMPTY_SET,
   fitKey = null,
   className = '',
@@ -271,7 +272,7 @@ export default function MapView({
     // Sources whose failure must never reach the screen. The radar is context
     // a visitor opted into; the flood data is the point of the page. An
     // optional layer shouting over the map is worse than that layer missing.
-    const OPTIONAL_SOURCES = new Set(['radar'])
+    const OPTIONAL_SOURCES = new Set(['radar', 'flood-extent'])
 
     map.on('error', (event) => {
       if (OPTIONAL_SOURCES.has(event?.sourceId)) return
@@ -280,7 +281,7 @@ export default function MapView({
       // survive: the radar's 503 arrived as "AJAXError: (503): <url>", which
       // the old filter — tile|fetch|abort|network — let straight through onto
       // a red banner across the flood map.
-      if (/tile|fetch|abort|network|ajaxerror|\/api\/rain\//i.test(message)) return
+      if (/tile|fetch|abort|network|ajaxerror|\/api\/(rain|flood-extent)\//i.test(message)) return
       handlersRef.current.onError?.(message)
     })
 
@@ -321,6 +322,34 @@ export default function MapView({
         // and every other rain call started failing with it.
         maxzoom: 9,
       })
+      // Satellite flood extent, same proxy arrangement as the radar. Its own
+      // layer on purpose: this is water seen from orbit over an area, up to a
+      // day old, not a claim about any road, and folding it into the pins or
+      // the verdict would turn a measurement into a statement it cannot make.
+      map.addSource('flood-extent', {
+        type: 'raster',
+        // Which product (1day/3days/7days) is the server's decision, so the
+        // page cannot ask for one the key is not entitled to.
+        tiles: [`${window.location.origin}/api/flood-extent/default/{z}/{x}/{y}.png`],
+        tileSize: 256,
+        bounds: [97.2, 5.4, 105.7, 20.6],
+        minzoom: 5,
+        // The backend refuses past this too. Mapped flood extent does not get
+        // sharper with zoom, and each level asks for four times as many tiles
+        // -- which is how the radar emptied a whole day's quota once.
+        maxzoom: 12,
+      })
+      map.addLayer({
+        id: 'flood-extent-layer',
+        type: 'raster',
+        source: 'flood-extent',
+        layout: { visibility: 'none' },
+        // Under the pins and the route, like the radar: context, never the
+        // thing being read. Slightly more opaque than rain because a flooded
+        // area is a fact about the ground rather than the sky.
+        paint: { 'raster-opacity': 0.5 },
+      })
+
       map.addLayer({
         id: 'radar-layer',
         type: 'raster',
@@ -666,6 +695,13 @@ export default function MapView({
     if (!map || !readyRef.current || !map.getLayer('radar-layer')) return
     map.setLayoutProperty('radar-layer', 'visibility', showRadar ? 'visible' : 'none')
   }, [showRadar])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !readyRef.current || !map.getLayer('flood-extent-layer')) return
+    map.setLayoutProperty(
+      'flood-extent-layer', 'visibility', showFloodExtent ? 'visible' : 'none')
+  }, [showFloodExtent])
 
   // Picking categories shows only those. An empty selection means no choice has
   // been made, which shows everything — the map should be complete until

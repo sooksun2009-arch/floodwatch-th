@@ -10,6 +10,22 @@ import CameraModal from '../components/CameraModal'
 import ChatWidget from '../components/ChatWidget'
 import ReportModal from '../components/ReportModal'
 
+function FloodExtentCaption({ product }) {
+  // Without this the layer is a coloured blob people will read as "these roads
+  // are closed". It is neither live nor about roads, and both have to be said
+  // where the layer is, not in a page someone has to go and find.
+  const span = { '1day': 'วันที่ผ่านมา', '3days': '3 วันที่ผ่านมา',
+                 '7days': '7 วันที่ผ่านมา', '30days': '30 วันที่ผ่านมา' }[product]
+    || 'ช่วงที่ผ่านมา'
+  return (
+    <div className="pointer-events-none absolute inset-x-3 bottom-16 z-10 mx-auto max-w-md rounded-xl border border-amber-800/60 bg-amber-950/85 px-3 py-2 text-xs leading-relaxed text-amber-100 backdrop-blur sm:inset-x-auto sm:left-3 sm:mx-0">
+      พื้นที่สีส้มคือบริเวณที่<b>ดาวเทียมเห็นน้ำใน{span}</b> — ไม่ใช่ภาพสด
+      และ<b>ไม่ได้แปลว่าถนนในนั้นผ่านไม่ได้</b> ถนนยกสูงกลางทุ่งที่น้ำท่วมเป็นเรื่องปกติ
+      <span className="mt-1 block text-amber-300/80">ข้อมูล GISTDA · ใช้ประกอบการตัดสินใจ ไม่ใช่คำยืนยัน</span>
+    </div>
+  )
+}
+
 function RadarCaption() {
   // Radar tiles are transparent where it is not raining, so a working radar
   // over a dry country looks exactly like a broken one. This says which it is,
@@ -193,6 +209,7 @@ export default function Home() {
   const [picking, setPicking] = useState(null)
   const [mapCenter, setMapCenter] = useState(null)
   const [radarOn, setRadarOn] = useState(false)
+  const [floodLayerOn, setFloodLayerOn] = useState(false)
   // Categories picked in the legend. Empty means no choice made, which shows
   // everything. Kept here rather than in MapView so the choice survives the
   // map being re-rendered.
@@ -208,6 +225,7 @@ export default function Home() {
   // The radar button only appears where there is a radar. Asking the server
   // beats hardcoding it: the key lives there, not here.
   const [rainEnabled, setRainEnabled] = useState(false)
+  const [floodLayer, setFloodLayer] = useState(null)
 
   const [activeCamera, setActiveCamera] = useState(null)
   const [chatOpen, setChatOpen] = useState(false)
@@ -290,6 +308,11 @@ export default function Home() {
   // lands on a pin or a route line far more often than on bare map.
   useEffect(() => {
     api.rainStatus().then((r) => setRainEnabled(Boolean(r?.enabled))).catch(() => {})
+    // Absent key -> absent button. A control that is present and does nothing
+    // is worse than no control.
+    api.floodExtentStatus()
+      .then((r) => setFloodLayer(r?.enabled ? r : null))
+      .catch(() => {})
   }, [])
 
   const onMapClick = useCallback(
@@ -341,6 +364,7 @@ export default function Home() {
               onMapClick={onMapClick}
               onCenterChange={setMapCenter}
               showRadar={radarOn}
+          showFloodExtent={floodLayerOn}
               selected={selected}
               onError={setMapError}
               pickMode={Boolean(picking)}
@@ -417,6 +441,25 @@ export default function Home() {
             </button>
           )}
           {!picking && rainEnabled && radarOn && <RadarCaption />}
+          {!picking && floodLayer && (
+            <button
+              onClick={() => setFloodLayerOn((on) => !on)}
+              aria-pressed={floodLayerOn}
+              // Sits under the radar button, which owns the top-left corner.
+              className={`absolute left-3 z-10 rounded-xl border px-3 py-2 text-sm backdrop-blur transition-colors ${
+                rainEnabled ? 'top-[3.25rem]' : 'top-3'
+              } ${
+                floodLayerOn
+                  ? 'border-amber-500 bg-amber-950/90 text-amber-200'
+                  : 'border-slate-700 bg-slate-950/85 text-slate-300 hover:bg-slate-900'
+              }`}
+            >
+              🛰️ น้ำท่วมจากดาวเทียม
+            </button>
+          )}
+          {!picking && floodLayer && floodLayerOn && (
+            <FloodExtentCaption product={floodLayer.product} />
+          )}
           {!picking && (
             <button
               onClick={() => {

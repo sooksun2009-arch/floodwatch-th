@@ -152,6 +152,9 @@ function keepAwake() {
     relayed = 'รีเลย์ล้มเหลว';
   }
 
+  // Written to the log as well as returned: running keepAwake by hand shows
+  // only what was logged, and the relay's outcome is the reason to run it.
+  Logger.log('สรุปรอบนี้: %s', summary + (relayed ? ' | ' + relayed : ''));
   return summary + (relayed ? ' | ' + relayed : '');
 }
 
@@ -170,7 +173,13 @@ function keepAwake() {
  * เพื่อตัวเลขสองตัวที่ไม่เคยเปลี่ยน จึงแกะตรงนี้แล้วส่งไปครั้งเดียว
  */
 function relayBMA() {
-  if (!INGEST_TOKEN) return 'ไม่ได้ตั้ง INGEST_TOKEN — ข้ามการรีเลย์';
+  if (!INGEST_TOKEN) {
+    // Logged, not only returned. keepAwake's return value is not written to
+    // the log when the function is run by hand, so this was the one path that
+    // produced no output at all — and it is the most likely one during setup.
+    Logger.log('ข้ามการรีเลย์: ยังไม่ได้ใส่ INGEST_TOKEN');
+    return 'ไม่ได้ตั้ง INGEST_TOKEN — ข้ามการรีเลย์';
+  }
 
   let summary;
   try {

@@ -8,8 +8,14 @@ router = APIRouter(prefix="/api/rain", tags=["rain"])
 
 @router.get("/status", response_model=dict)
 def status_():
-    """Whether rain features are configured, without revealing the key."""
-    return {"enabled": rain.enabled()}
+    """Whether rain features are configured, and why each one last failed.
+
+    "Configured" is not "working" — a key can be present and still be refused
+    for a given endpoint, which is what happened on the first deploy: radar
+    tiles served fine while every other call failed, and the only record was a
+    log line unreachable from outside the container.
+    """
+    return {"enabled": rain.enabled(), "last_failure": rain.LAST_FAILURE}
 
 
 @router.get("/cameras", response_model=dict)

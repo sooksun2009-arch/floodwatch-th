@@ -47,6 +47,17 @@ def enabled() -> bool:
     return bool(settings.longdo_api_key)
 
 
+# Why each kind of call last failed, so an operator can tell a wrong key from
+# an endpoint their plan does not include without shell access to the logs.
+LAST_FAILURE: dict[str, str] = {}
+
+
+def _remember_failure(kind: str, exc: BaseException) -> None:
+    detail = describe_failure(exc)
+    LAST_FAILURE[kind] = detail
+    logger.warning("เรียก %s ไม่สำเร็จ: %s", kind, detail)
+
+
 # ---------------------------------------------------------------- caching
 
 @dataclass
@@ -81,6 +92,26 @@ async def _cached(key: str, ttl: float, produce):
         value = await produce()
         _cache[key] = _Entry(at=time.monotonic(), value=value)
         return value
+
+
+def describe_failure(exc: BaseException) -> str:
+    """What the upstream actually said, with our key taken back out.
+
+    Swallowing this into a log was a mistake already made once with the
+    Bangkok gauges: "it failed" cannot distinguish a wrong key from a product
+    that does not include the endpoint from a request that timed out, and
+    those have nothing in common but the symptom. The key is stripped because
+    error text often quotes the request URL back.
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        body = (exc.response.text or "")[:200]
+        detail = f"HTTP {exc.response.status_code}: {body}"
+    else:
+        detail = f"{type(exc).__name__}: {exc}"[:220]
+    key = settings.longdo_api_key
+    if key:
+        detail = detail.replace(key, "<คีย์>")
+    return " ".join(detail.split())
 
 
 def _client() -> httpx.AsyncClient:
@@ -166,8 +197,8 @@ async def rain_now(path: list[list[float]]) -> dict | None:
 
     try:
         payload = await _cached(key, settings.rain_cache_sec, fetch)
-    except Exception:
-        logger.exception("ดึงข้อมูลฝนบนเส้นทางไม่สำเร็จ")
+    except Exception as exc:
+        _remember_failure("polygon", exc)
         return None
 
     stats = (payload or {}).get("stats") or {}
@@ -203,8 +234,8 @@ async def forecast_at(lat: float, lng: float) -> list[dict]:
 
     try:
         payload = await _cached(key, settings.rain_cache_sec, fetch)
-    except Exception:
-        logger.exception("ดึงพยากรณ์ฝนไม่สำเร็จ (%.4f, %.4f)", lat, lng)
+    except Exception as exc:
+        _remember_failure("forecast", exc)
         return []
 
     out: list[dict] = []
@@ -299,9 +330,11 @@ async def raining_cameras() -> dict:
 
     try:
         payload = await _cached("cameras", settings.rain_cache_sec, fetch)
-    except Exception:
-        logger.exception("ดึงรายการกล้องที่ฝนตกไม่สำเร็จ")
-        return {"available": False, "reason": "ดึงข้อมูลกล้องไม่สำเร็จ",
+    except Exception as exc:
+        detail = describe_failure(exc)
+        logger.warning("ดึงรายการกล้องที่ฝนตกไม่สำเร็จ: %s", detail)
+        return {"available": False,
+                "reason": f"ดึงข้อมูลกล้องไม่สำเร็จ — {detail}",
                 "cameras": [], "scanned": 0}
 
     cameras = []

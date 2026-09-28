@@ -160,9 +160,23 @@ check("ถามเส้นทางเดิมซ้ำ -> ใช้ cache �
 
 # ---------------------------------------------------------------- failures
 reset()
+rain.LAST_FAILURE.clear()
 result = with_upstream(lambda r: httpx.Response(500, text="boom"),
                        lambda: rain.route_rain(PATH))
 check("ต้นทางล่ม -> คืน None ไม่โยน error ใส่คำตอบเส้นทาง", result is None, result)
+check("และจำไว้ว่าล้มเพราะอะไร ไม่ใช่แค่ว่าล้ม",
+      "500" in (rain.LAST_FAILURE.get("polygon") or ""), rain.LAST_FAILURE)
+
+# Error text often quotes the request back, key and all.
+reset(key="super-secret-key")
+rain.LAST_FAILURE.clear()
+with_upstream(lambda r: httpx.Response(403, text=f"denied for key super-secret-key"),
+              lambda: rain.route_rain(PATH))
+check("สาเหตุที่รายงานออกมา ต้องไม่มีคีย์ติดไปด้วย",
+      "super-secret-key" not in str(rain.LAST_FAILURE), rain.LAST_FAILURE)
+check("แต่ยังบอกรหัสสถานะให้วินิจฉัยได้",
+      "403" in (rain.LAST_FAILURE.get("polygon") or ""), rain.LAST_FAILURE)
+rain.LAST_FAILURE.clear()
 
 reset()
 result = with_upstream(lambda r: httpx.Response(200, json={"unexpected": True}),
@@ -174,7 +188,9 @@ check("ต้นทางส่งรูปแบบแปลก -> ไม่ร
 with TestClient(app) as c:
     reset(key="")
     r = c.get("/api/rain/status")
-    check("status บอกว่ายังไม่ได้ตั้งค่า", r.json() == {"enabled": False}, r.json())
+    check("status บอกว่ายังไม่ได้ตั้งค่า", r.json().get("enabled") is False, r.json())
+    check("status บอกสาเหตุที่ล้มล่าสุดด้วย (คีย์มีอยู่ ไม่ได้แปลว่าใช้ได้)",
+          "last_failure" in r.json(), r.json())
     r = c.get("/api/rain/cameras")
     check("ไม่มีคีย์ -> cameras ตอบ 200 พร้อมบอกเหตุผล",
           r.status_code == 200 and r.json()["available"] is False, r.text[:150])

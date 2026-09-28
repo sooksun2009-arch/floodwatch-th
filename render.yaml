@@ -66,8 +66,15 @@ services:
       # POST /api/stations/sync.
       - key: SYNC_STATIONS_ON_START
         value: "true"
+      # Off since 2026-09-28. The Bangkok drainage site drops traffic from
+      # large cloud networks — measured from Render, from Google Apps Script,
+      # and from a machine in Thailand, which is the only one that works. The
+      # sync failed on every cycle since the first deploy and logged an error
+      # each time, which is noise about a thing that cannot be fixed from
+      # here. The code is unchanged; flip this back if a relay ever runs
+      # somewhere that can reach it.
       - key: SYNC_BMA_ON_START
-        value: "true"
+        value: "false"
 
       # Shared secret for POST /api/stations/bma/ingest. The Bangkok drainage
       # site drops connections from outside Thailand, so this container cannot

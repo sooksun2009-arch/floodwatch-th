@@ -29,6 +29,20 @@ from .config import settings
 logger = logging.getLogger("floodwatch.rain")
 
 RADAR_TILE = "/rain/api/v1/layer/latest/{z}/{x}/{y}.png"
+
+# One transparent pixel, served when a radar tile is unavailable. Built rather
+# than pasted as a base64 blob so it is obvious what it is.
+def _blank_png() -> bytes:
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGBA", (1, 1), (0, 0, 0, 0)).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+BLANK_TILE = _blank_png()
 POLYGON_URL = "/rain/api/v1/polygon"
 FORECAST_AREA_URL = "/rain/api/v1/forecast/area"
 CAMERAS_URL = "/rain/api/v1/cameras"

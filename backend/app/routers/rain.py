@@ -67,8 +67,19 @@ async def radar(
 
     tile = await rain.radar_tile(z, x, y)
     if tile is None:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
-                            "ยังไม่มีข้อมูลเรดาร์ฝน")
+        # A blank tile, not an error. The radar is optional context on a map
+        # people open to get out of a flood; a failed tile turning into a red
+        # banner across the screen is the decoration shouting over the point.
+        # Nothing is hidden — the reason is recorded and /api/rain/status
+        # reports it — but the map just shows no rain there, which is what a
+        # missing tile means anyway.
+        return Response(
+            content=rain.BLANK_TILE,
+            media_type="image/png",
+            # Short: a tile missing because of a blip should come back on the
+            # next pan, not be remembered as blank for ten minutes.
+            headers={"Cache-Control": "public, max-age=60"},
+        )
 
     content, content_type = tile
     return Response(

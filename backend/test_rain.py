@@ -406,7 +406,15 @@ with TestClient(app) as c:
 
     r = c.get("/api/rain/radar/10/800/470.png")
 
-    check("ไม่มีคีย์ -> ไทล์ตอบ 503 ไม่ใช่ 500", r.status_code == 503, r.status_code)
+    # A missing tile is a blank tile, not an error. maplibre turns a failed
+    # tile request into an error event, and that surfaced as a red banner
+    # across the flood map — decoration shouting over the point of the page.
+    check("ไม่มีคีย์ -> ไทล์ว่าง ไม่ใช่ error", r.status_code == 200, r.status_code)
+    check("และเป็นไฟล์ PNG จริง",
+          r.content.startswith(bytes([0x89])) and b"PNG" in r.content[:8], r.content[:12])
+    check("ไทล์ว่างไม่ถูกจำไว้นาน (ติดขัดชั่วคราวแล้วต้องกลับมาได้)",
+          "max-age=60" in r.headers.get("cache-control", ""),
+          r.headers.get("cache-control"))
 
 
 

@@ -263,10 +263,19 @@ export default function MapView({
 
     // A map that fails to build its layers renders as an empty basemap and
     // says nothing — the worst way for a flood map to fail. Report it.
+    // Sources whose failure must never reach the screen. The radar is context
+    // a visitor opted into; the flood data is the point of the page. An
+    // optional layer shouting over the map is worse than that layer missing.
+    const OPTIONAL_SOURCES = new Set(['radar'])
+
     map.on('error', (event) => {
+      if (OPTIONAL_SOURCES.has(event?.sourceId)) return
       const message = event?.error?.message || 'แผนที่ทำงานผิดพลาด'
-      // Tile fetch hiccups are transient and not worth alarming anyone over.
-      if (/tile|fetch|abort|network/i.test(message)) return
+      // Matched on the message as well, because a source id does not always
+      // survive: the radar's 503 arrived as "AJAXError: (503): <url>", which
+      // the old filter — tile|fetch|abort|network — let straight through onto
+      // a red banner across the flood map.
+      if (/tile|fetch|abort|network|ajaxerror|\/api\/rain\//i.test(message)) return
       handlersRef.current.onError?.(message)
     })
 
@@ -296,6 +305,10 @@ export default function MapView({
         // Radar covers Thailand only; asking for tiles beyond it wastes quota
         // to be told there is nothing there.
         bounds: [97.2, 5.4, 105.7, 20.6],
+        // Below this a single tile spans continents and the radar has nothing
+        // to put in it; the map asked for 0/0/0 — the whole world — and got a
+        // failure that surfaced as an error banner over the flood map.
+        minzoom: 5,
         // Stop requesting new tiles past zoom 9 and stretch these instead.
         // The radar's own resolution is about a kilometre, so sharper tiles
         // carry no more information — and each zoom level past this asks for

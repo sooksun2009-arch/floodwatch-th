@@ -11,22 +11,6 @@ import ChatWidget from '../components/ChatWidget'
 import ReportModal from '../components/ReportModal'
 import { useT } from '../i18n'
 
-function FloodExtentCaption({ product }) {
-  const { t } = useT()
-  // Without this the layer is a coloured blob people will read as "these roads
-  // are closed". It is neither live nor about roads, and both have to be said
-  // where the layer is, not in a page someone has to go and find.
-  const span = t(`span.${product}`) === `span.${product}` ? t('span.default') : t(`span.${product}`)
-  return (
-    <div className="max-w-[24rem] rounded-xl border border-amber-800/60 bg-amber-950/90 px-3 py-2 text-xs leading-relaxed text-amber-100 backdrop-blur">
-      {/* The <b> tags are part of the translated sentence, so it is inserted as
-          markup. The strings are ours, from i18n.jsx, never from a report. */}
-      <span dangerouslySetInnerHTML={{ __html: t('layer.satellite.caption', { span }) }} />
-      <span className="mt-1 block text-amber-300/80">{t('layer.satellite.credit')}</span>
-    </div>
-  )
-}
-
 function RadarCaption() {
   // Radar tiles are transparent where it is not raining, so a working radar
   // over a dry country looks exactly like a broken one. This says which it is,
@@ -67,14 +51,15 @@ function RadarCaption() {
     }
   }
 
+  // One line, and the live count is the part that had to survive the move to
+  // "how to use": a radar over a dry country draws nothing, which looks
+  // exactly like a radar that is broken. The count says which, and the time it
+  // was measured says whether to believe it. The explanation of what rain does
+  // and does not mean is in the instructions now.
   return (
-    <div className="max-w-[16rem] rounded-xl border border-slate-700 bg-slate-950/90 px-2.5 py-1.5 text-xs text-slate-300 backdrop-blur">
+    <span title={detail || undefined}>
       {headline}
-      {detail && <span className="mt-0.5 block text-[11px] text-slate-500">{detail}</span>}
-      <span className="mt-0.5 block text-[11px] text-slate-500">
-        พื้นที่ที่ไม่มีสี = ไม่มีฝน
-      </span>
-    </div>
+    </span>
   )
 }
 
@@ -492,12 +477,24 @@ export default function Home() {
                   </button>
                 )}
               </div>
-              {rainEnabled && radarOn && <RadarCaption />}
-              {floodLayer && floodLayerOn && (
-                <FloodExtentCaption product={floodLayer.product} />
+              {/* One line each, not a paragraph. The full explanation moved
+                  into "how to use", because on a phone these covered most of
+                  the map they were explaining. What stays is the part someone
+                  has to see while the layer is on: these pictures are not a
+                  statement about any road. */}
+              {((rainEnabled && radarOn) || (floodLayer && floodLayerOn)) && (
+                <div className="rounded-lg bg-slate-950/85 px-2.5 py-1 text-[11px] leading-snug text-slate-300 backdrop-blur">
+                  {floodLayer && floodLayerOn && <div>{t('layer.satShort')}</div>}
+                  {rainEnabled && radarOn && (
+                    <div>
+                      🌧️ <RadarCaption />
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}
+
           {!picking && (
             <button
               onClick={() => {

@@ -170,6 +170,14 @@ function HowTo({ onClose }) {
             </ul>
           </section>
 
+          <section>
+            <h4 className="font-semibold text-slate-100">{t('how.layers')}</h4>
+            <ul className="mt-1 space-y-1.5 text-slate-400">
+              <li dangerouslySetInnerHTML={{ __html: t('how.layersSat') }} />
+              <li dangerouslySetInnerHTML={{ __html: t('how.layersRain') }} />
+            </ul>
+          </section>
+
           <section className="rounded-xl border border-amber-900/60 bg-amber-950/30 p-3">
             <h4 className="font-semibold text-amber-200">{t('rp.limitsHeading')}</h4>
             <p className="mt-1 text-amber-100/80">

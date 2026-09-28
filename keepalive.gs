@@ -363,8 +363,41 @@ function telegramChatId() {
   }
 
   const chat = updates[updates.length - 1].message.chat;
-  Logger.log('เลขห้องแชทของคุณคือ %s (%s)', chat.id, chat.first_name || chat.title || '');
-  return chat.id;
+  // String() first: Apps Script formats a large number as 8.365650438E9, and
+  // pasting that into TELEGRAM_CHAT_ID fails silently — no error, just no
+  // messages ever arriving.
+  Logger.log('เลขห้องแชทของคุณคือ %s (%s)',
+             String(chat.id), chat.first_name || chat.title || '');
+  Logger.log('ใส่แบบนี้: const TELEGRAM_CHAT_ID = '' + String(chat.id) + '';');
+  return String(chat.id);
+}
+
+/**
+ * ส่งข้อความทดสอบเข้า Telegram — รันหลังตั้งค่าเสร็จเพื่อยืนยันว่าถึงจริง
+ * "ตั้งค่าแล้ว" กับ "ข้อความถึงจริง" เป็นคนละเรื่อง และเรื่องหลังคือเรื่องที่สำคัญ
+ */
+function testTelegram() {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    Logger.log('ยังไม่ได้ตั้ง TELEGRAM_BOT_TOKEN หรือ TELEGRAM_CHAT_ID');
+    return;
+  }
+  const res = UrlFetchApp.fetch(
+    'https://api.telegram.org/bot' + TELEGRAM_BOT_TOKEN + '/sendMessage',
+    {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({
+        chat_id: TELEGRAM_CHAT_ID,
+        text: 'FloodWatch TH: ทดสอบการแจ้งเตือน ถ้าเห็นข้อความนี้แปลว่าตั้งค่าถูกแล้ว',
+      }),
+      muteHttpExceptions: true,
+    });
+  const data = JSON.parse(res.getContentText());
+  if (data.ok) {
+    Logger.log('ส่งสำเร็จ — ไปดูใน Telegram ได้เลย');
+  } else {
+    Logger.log('ส่งไม่สำเร็จ: %s', data.description || res.getContentText());
+  }
 }
 
 /** ดึง JSON จาก API ของเรา คืน {ok, data} หรือ {ok:false, error} */

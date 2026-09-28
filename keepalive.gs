@@ -18,6 +18,10 @@
 
 const BASE_URL = 'https://floodwatch-th.onrender.com';
 
+/** ขึ้นบรรทัดใหม่ เขียนแบบนี้เพราะ 
+ ในไฟล์ .gs ที่แก้ด้วยสคริปต์เพี้ยนได้ง่าย */
+const NEWLINE = String.fromCharCode(10);
+
 /** ทุกกี่นาทีจึงยิงหนึ่งครั้ง Render หลับหลังว่าง 15 นาที จึงตั้ง 10 ให้มีระยะเผื่อ */
 const PING_MINUTES = 10;
 
@@ -42,6 +46,23 @@ const MIN_FRESH_STATIONS = 300;
 
 /** กันอีเมลถล่ม: แจ้งเตือนเรื่องเดิมซ้ำได้ไม่เกินหนึ่งครั้งในกี่ชั่วโมง */
 const ALERT_COOLDOWN_HOURS = 6;
+
+/**
+ * รายงานที่รออนุมัติเตือนถี่กว่านั้น เพราะมันมีอายุ
+ * คนแจ้งว่าน้ำท่วมตอนตีสอง ถ้ากว่าจะรู้ตอนเช้า ข้อมูลก็หมดประโยชน์ไปแล้ว
+ * และเตือนซ้ำเฉพาะเมื่อมีรายการใหม่เพิ่ม ไม่ใช่ย้ำเรื่องเดิมทุกรอบ
+ */
+const PENDING_REMINDER_MINUTES = 30;
+
+/**
+ * แจ้งเตือนผ่าน Telegram ด้วย (ไม่บังคับ)
+ * อีเมลบนมือถือมักเงียบ ส่วน Telegram เด้งเสียงเหมือนแชท
+ * วิธีตั้ง: ทักหา @BotFather ใน Telegram -> /newbot -> ได้โทเคนมาใส่ช่องล่าง
+ *          แล้วทักหาบอทตัวเองหนึ่งข้อความ -> รัน telegramChatId() เพื่อหาเลขห้อง
+ * เว้นว่างไว้ = ใช้อีเมลอย่างเดียว
+ */
+const TELEGRAM_BOT_TOKEN = '';
+const TELEGRAM_CHAT_ID = '';
 
 /**
  * ตั้งค่าให้ทำงานอัตโนมัติ — รันฟังก์ชันนี้ครั้งเดียวก็พอ
@@ -103,6 +124,13 @@ function keepAwake() {
   clearAlert('down');
 
   Logger.log(summary);
+
+  // รายงานที่รออนุมัติ — เรื่องเดียวที่ต้องให้คนกดอะไรสักอย่าง
+  try {
+    checkPending();
+  } catch (e) {
+    Logger.log('ตรวจรายงานรออนุมัติไม่สำเร็จ: %s', e);
+  }
 
   // ตื่นแล้วและข้อมูลปกติ ค่อยทำหน้าที่สะพานส่งข้อมูล กทม.
   // ล้มเหลวตรงนี้ต้องไม่ทำให้การกันหลับพัง มันคนละหน้าที่กัน
@@ -200,6 +228,117 @@ function testBMA() {
   }
 }
 
+/**
+ * เตือนเมื่อมีรายงานรออนุมัติ
+ *
+ * รายงานที่ไม่เข้าเกณฑ์ขึ้นแผนที่อัตโนมัติ (ไม่มีรูป และยังไม่มีคนที่สองยืนยัน)
+ * จะค้างอยู่ในคิวจนกว่าจะมีคนกด ซึ่งเดิมรู้ได้ทางเดียวคือเปิดหน้าผู้ดูแลเอง
+ * คืนที่ฝนถล่มคือคืนที่มีคนแจ้งเยอะที่สุด และเป็นคืนที่ผู้ดูแลหลับ
+ *
+ * เตือนเมื่อจำนวนเพิ่มขึ้น หรือเมื่อค้างอยู่นานเกิน PENDING_REMINDER_MINUTES
+ * ไม่ใช่ย้ำเรื่องเดิมทุก 10 นาทีจนคนเลิกอ่าน
+ */
+function checkPending() {
+  const stats = fetchJson('/api/stats/summary');
+  if (!stats.ok) {
+    Logger.log('อ่านสถิติไม่ได้: %s', stats.error);
+    return;
+  }
+
+  const pending = Number(stats.data.pending_moderation || 0);
+  const store = PropertiesService.getScriptProperties();
+  const lastCount = Number(store.getProperty('pending_count') || 0);
+  const lastAt = Number(store.getProperty('pending_at') || 0);
+  const now = Date.now();
+
+  if (pending === 0) {
+    // คิวว่างแล้ว ล้างสถานะเพื่อให้รายการถัดไปเตือนได้ทันที
+    store.deleteProperty('pending_count');
+    store.deleteProperty('pending_at');
+    return;
+  }
+
+  const grew = pending > lastCount;
+  const overdue = now - lastAt > PENDING_REMINDER_MINUTES * 60 * 1000;
+  if (!grew && !overdue) return;
+
+  const subject = 'FloodWatch TH: มีรายงานรออนุมัติ ' + pending + ' รายการ';
+  const body = [
+    'มีคนแจ้งน้ำท่วมเข้ามาและยังไม่ขึ้นแผนที่ รอให้คุณกดอนุมัติ',
+    '',
+    'รออนุมัติ: ' + pending + ' รายการ',
+    'ขึ้นแผนที่อยู่: ' + (stats.data.active_reports || 0) + ' รายการ',
+    'แจ้งเข้ามาใน 24 ชม.: ' + (stats.data.reports_last_24h || 0) + ' รายการ',
+    '',
+    'กดอนุมัติที่ ' + BASE_URL + '/admin',
+    '',
+    'รายงานที่แนบรูป หรือมีคนแจ้งจุดเดียวกันสองราย จะขึ้นแผนที่เองโดยไม่ต้องรอ',
+    'ที่ค้างอยู่คือรายการที่ยังไม่เข้าเกณฑ์นั้น',
+  ].join(NEWLINE);
+
+  notify(subject, body);
+  store.setProperty('pending_count', String(pending));
+  store.setProperty('pending_at', String(now));
+  Logger.log('แจ้งเตือน: รออนุมัติ %s รายการ', pending);
+}
+
+/** ส่งทั้งอีเมลและ Telegram (ถ้าตั้งค่าไว้) */
+function notify(subject, body) {
+  const to = Session.getActiveUser().getEmail();
+  if (to) {
+    try {
+      MailApp.sendEmail(to, subject, body);
+    } catch (e) {
+      Logger.log('ส่งอีเมลไม่สำเร็จ: %s', e);
+    }
+  }
+  sendTelegram(subject + NEWLINE + NEWLINE + body);
+}
+
+/** ส่งข้อความเข้า Telegram — เงียบไปถ้ายังไม่ได้ตั้งค่า */
+function sendTelegram(text) {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
+  try {
+    UrlFetchApp.fetch(
+      'https://api.telegram.org/bot' + TELEGRAM_BOT_TOKEN + '/sendMessage',
+      {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text: text,
+          disable_web_page_preview: true,
+        }),
+        muteHttpExceptions: true,
+      });
+  } catch (e) {
+    Logger.log('ส่ง Telegram ไม่สำเร็จ: %s', e);
+  }
+}
+
+/**
+ * หาเลขห้องแชทของคุณ — ทักหาบอทหนึ่งข้อความก่อน แล้วรันฟังก์ชันนี้
+ * เลขที่ได้เอาไปใส่ TELEGRAM_CHAT_ID ด้านบน
+ */
+function telegramChatId() {
+  if (!TELEGRAM_BOT_TOKEN) {
+    Logger.log('ยังไม่ได้ใส่ TELEGRAM_BOT_TOKEN');
+    return;
+  }
+  const res = UrlFetchApp.fetch(
+    'https://api.telegram.org/bot' + TELEGRAM_BOT_TOKEN + '/getUpdates',
+    { muteHttpExceptions: true });
+  const data = JSON.parse(res.getContentText());
+  const updates = data.result || [];
+  if (!updates.length) {
+    Logger.log('ยังไม่เห็นข้อความ — ทักหาบอทของคุณหนึ่งข้อความก่อน แล้วรันใหม่');
+    return;
+  }
+  const chat = updates[updates.length - 1].message.chat;
+  Logger.log('เลขห้องแชทของคุณคือ %s (%s)', chat.id, chat.first_name || chat.title || '');
+  return chat.id;
+}
+
 /** ดึง JSON จาก API ของเรา คืน {ok, data} หรือ {ok:false, error} */
 function fetchJson(path) {
   try {
@@ -228,8 +367,7 @@ function alertOnce(key, subject, body) {
 
   if (now - last < ALERT_COOLDOWN_HOURS * 3600 * 1000) return;
 
-  const to = Session.getActiveUser().getEmail();
-  if (to) MailApp.sendEmail(to, subject, body);
+  notify(subject, body);
   store.setProperty(prop, String(now));
 }
 

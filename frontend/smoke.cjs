@@ -351,6 +351,46 @@ const check = (name, ok, extra = '') => {
   })
   check('ปุ่มลอยบนแผนที่ไม่ทับกัน', overlaps.length === 0, overlaps.join(' · '))
 
+  // Turn on every optional layer at once and measure the boxes they add. The
+  // radar caption, the satellite caption and the legend each looked right
+  // alone and collided in pairs on the live site -- twice, reported by the
+  // user rather than caught here.
+  const captions = await page.evaluate(async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+    for (const word of ['เรดาร์ฝน', 'ดาวเทียม']) {
+      const b = [...document.querySelectorAll('button')]
+        .find((x) => x.textContent.includes(word) && x.getAttribute('aria-pressed') === 'false')
+      b?.click()
+      await wait(700)
+    }
+    const boxes = [...document.querySelectorAll('.backdrop-blur')]
+      .map((el) => ({
+        label: el.textContent.replace(/\s+/g, ' ').trim().slice(0, 22),
+        r: el.getBoundingClientRect(),
+      }))
+      .filter((b) => b.r.width > 20 && b.r.height > 10)
+    const hits = []
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i].r, c = boxes[j].r
+        if (boxes[i].label && a.contains) continue
+        const dx = Math.min(a.right, c.right) - Math.max(a.left, c.left)
+        const dy = Math.min(a.bottom, c.bottom) - Math.max(a.top, c.top)
+        // Skip nesting: a caption inside its own stack is not a collision.
+        const nested = (a.left <= c.left && a.right >= c.right &&
+                        a.top <= c.top && a.bottom >= c.bottom) ||
+                       (c.left <= a.left && c.right >= a.right &&
+                        c.top <= a.top && c.bottom >= a.bottom)
+        if (!nested && dx > 4 && dy > 4) {
+          hits.push(`"${boxes[i].label}" ทับ "${boxes[j].label}"`)
+        }
+      }
+    }
+    return { count: boxes.length, hits }
+  })
+  check('เปิดทุกเลเยอร์พร้อมกัน -> กล่องคำอธิบายไม่ทับกัน',
+        captions.hits.length === 0, captions.hits.join(' · '))
+
   // The OpenStreetMap credit has to stay readable. Using the map is
   // conditional on showing it, and it sits in the same corner the buttons keep
   // moving into: "แจ้งน้ำท่วม" covered 96 of its 161 pixels on a phone and the

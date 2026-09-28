@@ -18,10 +18,7 @@ function FloodExtentCaption({ product }) {
                  '7days': '7 วันที่ผ่านมา', '30days': '30 วันที่ผ่านมา' }[product]
     || 'ช่วงที่ผ่านมา'
   return (
-    // Top centre. Bottom-left sat on the legend and covered the colour it was
-    // explaining; the two other corners hold the zoom controls and the report
-    // button. This is the only free edge.
-    <div className="pointer-events-none absolute left-1/2 top-3 z-10 w-[min(28rem,calc(100%-6.5rem))] -translate-x-1/2 rounded-xl border border-amber-800/60 bg-amber-950/90 px-3 py-2 text-xs leading-relaxed text-amber-100 backdrop-blur">
+    <div className="max-w-[24rem] rounded-xl border border-amber-800/60 bg-amber-950/90 px-3 py-2 text-xs leading-relaxed text-amber-100 backdrop-blur">
       พื้นที่สีส้มคือบริเวณที่<b>ดาวเทียมเห็นน้ำใน{span}</b> — ไม่ใช่ภาพสด
       และ<b>ไม่ได้แปลว่าถนนในนั้นผ่านไม่ได้</b> ถนนยกสูงกลางทุ่งที่น้ำท่วมเป็นเรื่องปกติ
       <span className="mt-1 block text-amber-300/80">ข้อมูล GISTDA · ใช้ประกอบการตัดสินใจ ไม่ใช่คำยืนยัน</span>
@@ -70,7 +67,7 @@ function RadarCaption() {
   }
 
   return (
-    <div className="absolute left-3 top-14 z-10 max-w-[16rem] rounded-xl border border-slate-700 bg-slate-950/90 px-2.5 py-1.5 text-xs text-slate-300 backdrop-blur">
+    <div className="max-w-[16rem] rounded-xl border border-slate-700 bg-slate-950/90 px-2.5 py-1.5 text-xs text-slate-300 backdrop-blur">
       {headline}
       {detail && <span className="mt-0.5 block text-[11px] text-slate-500">{detail}</span>}
       <span className="mt-0.5 block text-[11px] text-slate-500">
@@ -429,39 +426,46 @@ export default function Home() {
               </div>
             </>
           )}
-          {!picking && rainEnabled && (
-            <button
-              onClick={() => setRadarOn((on) => !on)}
-              aria-pressed={radarOn}
-              // Top-left: the map's own zoom controls own the top-right.
-              className={`absolute left-3 top-3 z-10 rounded-xl border px-3 py-2 text-sm backdrop-blur transition-colors ${
-                radarOn
-                  ? 'border-sky-500 bg-sky-950/90 text-sky-200'
-                  : 'border-slate-700 bg-slate-950/85 text-slate-300 hover:bg-slate-900'
-              }`}
-            >
-              🌧️ เรดาร์ฝน
-            </button>
-          )}
-          {!picking && rainEnabled && radarOn && <RadarCaption />}
-          {!picking && floodLayer && (
-            <button
-              onClick={() => setFloodLayerOn((on) => !on)}
-              aria-pressed={floodLayerOn}
-              // Sits under the radar button, which owns the top-left corner.
-              className={`absolute left-3 z-10 rounded-xl border px-3 py-2 text-sm backdrop-blur transition-colors ${
-                rainEnabled ? 'top-[3.25rem]' : 'top-3'
-              } ${
-                floodLayerOn
-                  ? 'border-amber-500 bg-amber-950/90 text-amber-200'
-                  : 'border-slate-700 bg-slate-950/85 text-slate-300 hover:bg-slate-900'
-              }`}
-            >
-              🛰️ น้ำท่วมจากดาวเทียม
-            </button>
-          )}
-          {!picking && floodLayer && floodLayerOn && (
-            <FloodExtentCaption product={floodLayer.product} />
+          {/* One column for every optional layer control and its caption.
+              Four separately positioned boxes in the same corner collided
+              twice -- the satellite caption onto the legend, then onto the
+              radar caption. Stacked, they cannot. The right inset clears the
+              map's zoom controls. */}
+          {!picking && (rainEnabled || floodLayer) && (
+            <div className="pointer-events-none absolute left-3 right-14 top-3 z-10 flex flex-col items-start gap-2 sm:right-auto sm:max-w-sm">
+              <div className="pointer-events-auto flex flex-wrap gap-2">
+                {rainEnabled && (
+                  <button
+                    onClick={() => setRadarOn((on) => !on)}
+                    aria-pressed={radarOn}
+                    className={`rounded-xl border px-3 py-2 text-sm backdrop-blur transition-colors ${
+                      radarOn
+                        ? 'border-sky-500 bg-sky-950/90 text-sky-200'
+                        : 'border-slate-700 bg-slate-950/85 text-slate-300 hover:bg-slate-900'
+                    }`}
+                  >
+                    🌧️ เรดาร์ฝน
+                  </button>
+                )}
+                {floodLayer && (
+                  <button
+                    onClick={() => setFloodLayerOn((on) => !on)}
+                    aria-pressed={floodLayerOn}
+                    className={`rounded-xl border px-3 py-2 text-sm backdrop-blur transition-colors ${
+                      floodLayerOn
+                        ? 'border-amber-500 bg-amber-950/90 text-amber-200'
+                        : 'border-slate-700 bg-slate-950/85 text-slate-300 hover:bg-slate-900'
+                    }`}
+                  >
+                    🛰️ น้ำท่วมจากดาวเทียม
+                  </button>
+                )}
+              </div>
+              {rainEnabled && radarOn && <RadarCaption />}
+              {floodLayer && floodLayerOn && (
+                <FloodExtentCaption product={floodLayer.product} />
+              )}
+            </div>
           )}
           {!picking && (
             <button

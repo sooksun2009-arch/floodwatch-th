@@ -3,6 +3,10 @@
 
 const TOKEN_KEY = 'floodwatch_token'
 
+/** Fired after a report is approved or rejected, so a queue count can correct
+ *  itself immediately rather than waiting out its next poll. */
+export const QUEUE_CHANGED = 'floodwatch:queue-changed'
+
 export const getToken = () => {
   try {
     return localStorage.getItem(TOKEN_KEY)
@@ -125,8 +129,19 @@ export const api = {
   // Moderators need to see what is live, not only what is waiting — taking a
   // wrong report off the map matters more than approving a new one.
   liveReports: () => request('/api/reports?limit=500'),
+  // Announces itself, so anything showing a queue count can correct itself at
+  // the moment the queue changes instead of waiting out its poll. A badge
+  // that says one while the page beside it says none is worse than no badge.
   moderate: (id, payload) =>
-    request(`/api/admin/reports/${id}/moderate`, { method: 'POST', body: payload }),
+    request(`/api/admin/reports/${id}/moderate`, { method: 'POST', body: payload })
+      .then((result) => {
+        try {
+          window.dispatchEvent(new Event(QUEUE_CHANGED))
+        } catch {
+          // No window (tests, SSR): the caller still gets its result.
+        }
+        return result
+      }),
   users: () => request('/api/admin/users'),
   updateUser: (id, payload) =>
     request(`/api/admin/users/${id}`, { method: 'PATCH', body: payload }),

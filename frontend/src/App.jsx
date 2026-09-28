@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom'
-import { api } from './api'
+import { QUEUE_CHANGED, api } from './api'
 import { AuthProvider, useAuth } from './auth'
 import { useT } from './i18n'
 import Home from './pages/Home'
@@ -151,9 +151,13 @@ function usePendingCount(enabled) {
         .catch(() => {})
     read()
     const timer = setInterval(read, 60000)
+    // And immediately when a moderator acts. Waiting out the poll left the
+    // badge saying one while the page under it said the queue was empty.
+    window.addEventListener(QUEUE_CHANGED, read)
     return () => {
       alive = false
       clearInterval(timer)
+      window.removeEventListener(QUEUE_CHANGED, read)
     }
   }, [enabled])
 

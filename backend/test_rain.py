@@ -16,8 +16,13 @@ os.environ["GEOCODE_ENABLED"] = "false"
 os.environ["SYNC_STATIONS_ON_START"] = "false"
 
 import asyncio
+import json as _json
 
 import httpx
+
+
+def json_dumps(x):
+    return _json.dumps(x, ensure_ascii=False)
 from fastapi.testclient import TestClient
 
 from app import rain
@@ -238,6 +243,48 @@ with TestClient(app) as c:
         httpx.AsyncClient = real
 
     settings.longdo_api_key = ""
+
+# ---------------------------------------------------------------- prober
+reset()
+rain.LAST_FAILURE.clear()
+
+
+def mixed(request: httpx.Request) -> httpx.Response:
+    # Shaped like what production actually returned: some endpoints fine, some
+    # refused by the gateway with a message that blames the key.
+    if "/polygon" in request.url.path or "forecast" in request.url.path:
+        return httpx.Response(403, json={"detail": "API key is invalid or rate limit exceeded"})
+    return httpx.Response(200, json={"ok": True})
+
+
+report = with_upstream(mixed, lambda: rain.probe_all())
+results = report["results"]
+check("ตรวจครบทุก endpoint", len(results) == len(rain.PROBES), list(results))
+check("แยกได้ว่าอันไหนผ่าน", results["cameras"]["ok"] is True, results["cameras"])
+check("แยกได้ว่าอันไหนถูกปฏิเสธ",
+      results["polygon"]["ok"] is False and results["polygon"]["status"] == 403,
+      results["polygon"])
+check("แนบข้อความจากต้นทางมาให้อ่าน",
+      "rate limit" in results["forecast_area"]["body"], results["forecast_area"])
+
+reset(key="secret-probe-key")
+report = with_upstream(
+    lambda r: httpx.Response(403, text="denied key=secret-probe-key"),
+    lambda: rain.probe_all())
+check("ผลตรวจไม่มีคีย์ปนออกมา",
+      "secret-probe-key" not in json_dumps(report), report)
+
+# A success must clear an old failure, or a fault fixed hours ago still reads
+# as the current state.
+reset()
+rain.LAST_FAILURE["polygon"] = "HTTP 403: เก่า"
+with_upstream(lambda r: httpx.Response(200, json=POLYGON) if "/polygon" in str(r.url)
+              else httpx.Response(200, json=FORECAST),
+              lambda: rain.route_rain(PATH))
+check("สำเร็จแล้วต้องล้างความล้มเหลวเก่าทิ้ง",
+      "polygon" not in rain.LAST_FAILURE, rain.LAST_FAILURE)
+rain.LAST_FAILURE.clear()
+settings.longdo_api_key = ""
 
 print()
 print("=" * 60)

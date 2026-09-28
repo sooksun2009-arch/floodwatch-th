@@ -18,6 +18,18 @@ def status_():
     return {"enabled": rain.enabled(), "last_failure": rain.LAST_FAILURE}
 
 
+@router.get("/diagnose", response_model=dict)
+async def diagnose():
+    """What this key can actually reach, endpoint by endpoint.
+
+    Reports status codes and the upstream's own words with the key removed.
+    Exists because "the key works" turned out to be true and false at the same
+    time: radar tiles and cameras served fine while the polygon and forecast
+    calls were refused outright.
+    """
+    return await rain.probe_all()
+
+
 @router.get("/cameras", response_model=dict)
 async def cameras():
     """Traffic cameras with rain falling on them right now.

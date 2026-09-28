@@ -58,6 +58,72 @@ def _remember_failure(kind: str, exc: BaseException) -> None:
     logger.warning("เรียก %s ไม่สำเร็จ: %s", kind, detail)
 
 
+def _remember_success(kind: str) -> None:
+    """Clear the old failure. Without this a fault fixed hours ago still reads
+    as the current state, which cost a round of wrong diagnosis already."""
+    LAST_FAILURE.pop(kind, None)
+
+
+PROBES: dict[str, tuple[str, str, dict]] = {
+    "cameras": ("GET", CAMERAS_URL, {}),
+    "location": ("GET", "/rain/api/v1/location", {"lat": 13.7563, "lon": 100.5018}),
+    "area": ("GET", "/rain/api/v1/area",
+             {"lat": 13.7563, "lon": 100.5018, "radius_km": 5}),
+    "forecast_location": ("GET", "/rain/api/v1/forecast/location",
+                          {"lat": 13.7563, "lon": 100.5018}),
+    "forecast_area": ("GET", FORECAST_AREA_URL,
+                      {"lat": 13.7563, "lon": 100.5018, "radius_km": 10}),
+    "layer_list": ("GET", "/rain/api/v1/layer/list", {}),
+    "polygon": ("POST", POLYGON_URL, {}),
+}
+
+_POLYGON_PROBE = [[[100.50, 13.75], [100.52, 13.75], [100.52, 13.77],
+                   [100.50, 13.77], [100.50, 13.75]]]
+
+
+async def probe_all() -> dict:
+    """Ask each endpoint once and report what it said.
+
+    A key can be accepted by one endpoint and refused by another on the same
+    plan — which is exactly what happened here, with cameras and radar tiles
+    working while the polygon and forecast calls returned a flat 403. Guessing
+    at which is which wasted a round already.
+    """
+    if not enabled():
+        return {"enabled": False, "results": {}}
+
+    async def one(name):
+        method, path, params = PROBES[name]
+        try:
+            async with _client() as client:
+                if method == "POST":
+                    response = await client.post(
+                        path, params={"key": settings.longdo_api_key},
+                        json={"type": "Polygon", "coordinates": _POLYGON_PROBE})
+                else:
+                    response = await client.get(
+                        path, params={"key": settings.longdo_api_key, **params})
+            body = (response.text or "")[:120]
+            key = settings.longdo_api_key
+            if key:
+                body = body.replace(key, "<คีย์>")
+            return {"status": response.status_code,
+                    "ok": response.status_code == 200,
+                    "body": " ".join(body.split())}
+        except Exception as exc:
+            return {"status": None, "ok": False, "body": describe_failure(exc)}
+
+    names = list(PROBES)
+    # Sequential on purpose: their gateway limits requests per minute, and a
+    # burst would produce rate-limit errors that look like the fault being
+    # investigated.
+    results = {}
+    for name in names:
+        results[name] = await one(name)
+        await asyncio.sleep(0.4)
+    return {"enabled": True, "results": results}
+
+
 # ---------------------------------------------------------------- caching
 
 @dataclass
@@ -201,6 +267,7 @@ async def rain_now(path: list[list[float]]) -> dict | None:
         _remember_failure("polygon", exc)
         return None
 
+    _remember_success("polygon")
     stats = (payload or {}).get("stats") or {}
     if not stats:
         return None
@@ -238,6 +305,7 @@ async def forecast_at(lat: float, lng: float) -> list[dict]:
         _remember_failure("forecast", exc)
         return []
 
+    _remember_success("forecast")
     out: list[dict] = []
     for slot, lead in zip((payload or {}).get("forecast") or [],
                           (payload or {}).get("lead_minutes") or []):

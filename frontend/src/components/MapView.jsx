@@ -120,6 +120,10 @@ const TREND_COLOR = {
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
+// A stable identity, so the filter effect below does not re-run on every
+// render just because a fresh empty Set was passed in.
+const EMPTY_SET = new Set()
+
 // A gap longer than this means the gauge stopped reporting, so the line is
 // broken there. Joining across it would draw a smooth climb the water may not
 // have made — the reading either side is real, the slope between them is not.
@@ -224,6 +228,7 @@ export default function MapView({
   onError,
   pickMode = false,
   showRadar = false,
+  hidden = EMPTY_SET,
   fitKey = null,
   className = '',
 }) {
@@ -661,6 +666,24 @@ export default function MapView({
     if (!map || !readyRef.current || !map.getLayer('radar-layer')) return
     map.setLayoutProperty('radar-layer', 'visibility', showRadar ? 'visible' : 'none')
   }, [showRadar])
+
+  // Hiding a category filters the pins rather than removing the source, so the
+  // data is still there the moment it is switched back on and nothing refetches.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !readyRef.current || !map.getLayer('report-dots')) return
+
+    const hiddenLevels = [...hidden].filter((key) => key in LEVELS)
+    map.setFilter(
+      'report-dots',
+      hiddenLevels.length ? ['!', ['in', ['get', 'level'], ['literal', hiddenLevels]]] : null,
+    )
+    for (const [key, layer] of [['cameras', 'camera-dots'], ['stations', 'station-dots']]) {
+      if (map.getLayer(layer)) {
+        map.setLayoutProperty(layer, 'visibility', hidden.has(key) ? 'none' : 'visible')
+      }
+    }
+  }, [hidden])
 
   // Push data into the sources whenever it changes, waiting for style load.
   useEffect(() => {

@@ -93,7 +93,7 @@ function SafetyNotice() {
   )
 }
 
-function Legend() {
+function Legend({ hidden, onToggle, onReset }) {
   // On a phone the full key covers a third of the map and sits over marker
   // popups, so it starts collapsed there and expanded on a wider screen.
   const [open, setOpen] = useState(() => {
@@ -109,7 +109,7 @@ function Legend() {
       {open ? (
         <div className="rounded-xl border border-slate-700 bg-slate-950/90 p-2.5 text-xs backdrop-blur">
           <div className="mb-1.5 flex items-center justify-between gap-3">
-            <p className="font-semibold text-slate-300">ระดับน้ำ</p>
+            <p className="font-semibold text-slate-300">ระดับน้ำ · กดเพื่อกรอง</p>
             <button
               onClick={() => setOpen(false)}
               className="rounded px-1 text-sm leading-none text-slate-500 hover:text-slate-200"
@@ -118,28 +118,40 @@ function Legend() {
               −
             </button>
           </div>
-          <ul className="space-y-1">
-            {Object.entries(LEVELS).map(([key, value]) => (
-              <li key={key} className="flex items-center gap-2 text-slate-400">
-                <span
-                  className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-900"
-                  style={{ background: value.color }}
-                />
-                {value.short}
-              </li>
-            ))}
-            <li className="flex items-center gap-2 pt-1 text-slate-400">
-              <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-sky-500 ring-2 ring-sky-100" />
-              กล้อง CCTV
-            </li>
-            <li className="flex items-center gap-2 text-slate-400">
-              <span
-                className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-900"
-                style={{ background: SITUATIONS[5].color }}
-              />
-              คลองเฝ้าระวัง/วิกฤติ
-            </li>
+          <ul className="space-y-0.5">
+            {[
+              ...Object.entries(LEVELS).map(([key, value]) => [key, value.short, value.color]),
+              ['cameras', 'กล้อง CCTV', '#0ea5e9'],
+              ['stations', 'คลองเฝ้าระวัง/วิกฤติ', SITUATIONS[5].color],
+            ].map(([key, label, color]) => {
+              const off = hidden.has(key)
+              return (
+                <li key={key}>
+                  <button
+                    onClick={() => onToggle(key)}
+                    aria-pressed={!off}
+                    className={`flex w-full items-center gap-2 rounded px-1 py-0.5 text-left transition-colors hover:bg-slate-800 ${
+                      off ? 'text-slate-600' : 'text-slate-300'
+                    }`}
+                  >
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-900"
+                      style={{ background: color, opacity: off ? 0.25 : 1 }}
+                    />
+                    <span className={off ? 'line-through' : ''}>{label}</span>
+                  </button>
+                </li>
+              )
+            })}
           </ul>
+          {hidden.size > 0 && (
+            <button
+              onClick={onReset}
+              className="mt-1.5 w-full rounded px-1 py-0.5 text-left text-[11px] text-sky-400 hover:bg-slate-800"
+            >
+              แสดงทั้งหมดอีกครั้ง ({hidden.size} รายการถูกซ่อน)
+            </button>
+          )}
         </div>
       ) : (
         <button
@@ -176,6 +188,17 @@ export default function Home() {
   const [picking, setPicking] = useState(null)
   const [mapCenter, setMapCenter] = useState(null)
   const [radarOn, setRadarOn] = useState(false)
+  // Categories switched off in the legend. Kept here rather than in MapView so
+  // the choice survives the map being re-rendered.
+  const [hidden, setHidden] = useState(() => new Set())
+  const toggleCategory = useCallback((key) => {
+    setHidden((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
   // The radar button only appears where there is a radar. Asking the server
   // beats hardcoding it: the key lives there, not here.
   const [rainEnabled, setRainEnabled] = useState(false)
@@ -312,12 +335,17 @@ export default function Home() {
               onMapClick={onMapClick}
               onCenterChange={setMapCenter}
               showRadar={radarOn}
+              hidden={hidden}
               onError={setMapError}
               pickMode={Boolean(picking)}
               fitKey={fitKey}
             />
           </Suspense>
-          <Legend />
+          <Legend
+            hidden={hidden}
+            onToggle={toggleCategory}
+            onReset={() => setHidden(new Set())}
+          />
           {mapError && (
             <div className="absolute inset-x-3 top-3 z-20 rounded-xl border border-red-800 bg-red-950/90 px-3 py-2 text-sm text-red-200 backdrop-blur">
               {mapError}

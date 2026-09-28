@@ -165,6 +165,47 @@ const check = (name, ok, extra = '') => {
   if (!closed) await page.keyboard.press('Escape')
   await new Promise((r) => setTimeout(r, 400))
 
+  // Filtering by the legend. The check that matters is that pins leave the
+  // map, not that the legend row goes grey — those are easy to confuse and
+  // only one of them is the feature.
+  const drawn = (layer) =>
+    page.evaluate(
+      (id) => (window.__fwMap?.getLayer(id)
+        ? window.__fwMap.queryRenderedFeatures({ layers: [id] }).length
+        : -1),
+      layer,
+    )
+
+  const clickLegend = (label) =>
+    page.evaluate((text) => {
+      const b = [...document.querySelectorAll('button')].find(
+        (x) => x.textContent.trim() === text,
+      )
+      if (!b) return false
+      b.click()
+      return true
+    }, label)
+
+  const before = await drawn('report-dots')
+  if (before > 0) {
+    check('กดคำอธิบายสี "10-30 ซม." ได้', await clickLegend('10-30 ซม.'))
+    await new Promise((r) => setTimeout(r, 500))
+    const after = await drawn('report-dots')
+    check('ซ่อนแล้วหมุดหายจากแผนที่จริง', after < before, `${before} -> ${after}`)
+
+    const note = await page.evaluate(() =>
+      document.body.innerText.includes('แสดงทั้งหมดอีกครั้ง'),
+    )
+    check('บอกว่ามีอะไรถูกซ่อนอยู่ (ไม่ใช่หายไปเฉย ๆ)', note)
+
+    await clickLegend('10-30 ซม.')
+    await new Promise((r) => setTimeout(r, 500))
+    check('กดอีกครั้งแล้วกลับมา', (await drawn('report-dots')) === before,
+      `${before} -> ${await drawn('report-dots')}`)
+  } else {
+    console.log('      (ข้ามเทสตัวกรอง: ไม่มีหมุดรายงานบนจอ)')
+  }
+
   // The share button, both ways it can work. On a Thai phone the native sheet
   // is how this reaches LINE; on a desktop there is no sheet and the clipboard
   // is the whole feature.

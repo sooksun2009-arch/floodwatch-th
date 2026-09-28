@@ -487,18 +487,22 @@ def path_enters(path, rings) -> bool:
 
 # ------------------------------------------------- reading the picture itself
 
-def _tile_xy(lat: float, lng: float, z: int) -> tuple[int, int, int, int]:
-    """Tile index and the pixel inside it for a coordinate.
+def _tile_xy(lat: float, lng: float, z: int) -> tuple[int, int, float, float]:
+    """Tile index, and where inside that tile the point falls as a fraction.
 
-    Plain Web Mercator. Written out rather than pulled in as a dependency
-    because it is six lines and the alternative is another package on a small
-    instance.
+    A fraction rather than a pixel, because the served tiles turned out to be
+    512 pixels and the first version multiplied by 256 -- so every lookup read
+    the top-left quarter of the picture and a tile carrying forty thousand
+    coloured pixels came back as dry. The caller scales by the image it
+    actually received.
+
+    Plain Web Mercator, written out rather than pulled in as a dependency.
     """
     n = 1 << z
     x = (lng + 180.0) / 360.0 * n
     lat_rad = math.radians(max(-85.05, min(85.05, lat)))
     y = (1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n
-    return int(x), int(y), int((x - int(x)) * 256), int((y - int(y)) * 256)
+    return int(x), int(y), x - int(x), y - int(y)
 
 
 async def route_touches_water(path) -> bool | None:
@@ -519,10 +523,10 @@ async def route_touches_water(path) -> bool | None:
         samples.append(path[-1])
 
     # Group by tile so a route along one road fetches one picture, not twenty.
-    wanted: dict[tuple[int, int], list[tuple[int, int]]] = {}
+    wanted: dict[tuple[int, int], list[tuple[float, float]]] = {}
     for lat, lng in samples:
-        x, y, px, py = _tile_xy(lat, lng, z)
-        wanted.setdefault((x, y), []).append((px, py))
+        x, y, fx, fy = _tile_xy(lat, lng, z)
+        wanted.setdefault((x, y), []).append((fx, fy))
 
     asked = 0
     for (x, y), pixels in wanted.items():
@@ -535,9 +539,10 @@ async def route_touches_water(path) -> bool | None:
         except Exception as exc:  # noqa: BLE001 - a bad tile is not a verdict
             _remember_failure("route_tile", exc)
             continue
-        for px, py in pixels:
-            if image.getpixel((min(px, image.width - 1),
-                               min(py, image.height - 1)))[3] >= settings.gistda_route_alpha:
+        for fx, fy in pixels:
+            px = min(int(fx * image.width), image.width - 1)
+            py = min(int(fy * image.height), image.height - 1)
+            if image.getpixel((px, py))[3] >= settings.gistda_route_alpha:
                 _remember_success("route_tile")
                 return True
 

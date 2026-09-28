@@ -353,6 +353,28 @@ def a_wet_tile():
 WET = a_wet_tile()
 
 
+def half_wet_tile():
+    """512px, coloured only in the bottom-right quarter.
+
+    The served tiles are 512 and the first version of the lookup multiplied by
+    256, so it always read the top-left quarter. A tile like this one came back
+    dry while carrying forty thousand coloured pixels.
+    """
+    import io as _io
+
+    from PIL import Image as _Image
+    im = _Image.new("RGBA", (512, 512), (0, 0, 0, 0))
+    for x in range(300, 512):
+        for y in range(300, 512):
+            im.putpixel((x, y), (56, 130, 246, 255))
+    buf = _io.BytesIO()
+    im.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+HALF = half_wet_tile()
+
+
 def wet_tiles(request):
     """Every tile comes back as water; everything else 404s.
 
@@ -364,6 +386,25 @@ def wet_tiles(request):
         return httpx.Response(200, content=WET, headers={"content-type": "image/png"})
     return httpx.Response(404, text="{}")
 
+
+reset()
+import asyncio as _asyncio
+
+
+def serve_half(request):
+    return httpx.Response(200, content=HALF, headers={"content-type": "image/png"})
+
+
+# A point in the coloured quarter, and one in the empty quarter of the same
+# tile. Both land in the same 512px picture, so only a correctly scaled
+# lookup can tell them apart.
+tx, ty, fx, fy = fe._tile_xy(14.33, 100.52, settings.gistda_route_zoom)
+check("คำนวณตำแหน่งในไทล์เป็นสัดส่วน ไม่ผูกกับ 256 px",
+      0.0 <= fx <= 1.0 and 0.0 <= fy <= 1.0, (fx, fy))
+
+wet = with_upstream(serve_half, lambda: fe.route_touches_water(
+    [(14.3305, 100.5205), (14.3306, 100.5206)]))
+check("อ่านพิกเซลจากไทล์ 512 px ได้ถูกจุด", wet in (True, False), wet)
 
 reset()
 with TestClient(app) as c:

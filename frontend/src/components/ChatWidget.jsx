@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, ApiError, levelLabel } from '../api'
+import { useT } from '../i18n'
 
 const SESSION_KEY = 'floodwatch_chat_session'
 
@@ -16,15 +17,21 @@ const sessionId = (() => {
   }
 })()
 
-const GREETING = {
+// Built per render rather than held as a constant: it is translated, and the
+// English version says outright that the answers come back in Thai. Claiming
+// otherwise would be discovered on the first question.
+const greeting = (t, lang) => ({
   role: 'bot',
-  text:
-    'สวัสดีครับ ผมช่วยเช็คน้ำท่วมให้ได้\n\n' +
-    'ถามได้เลย เช่น "จากบางนาไปรามคำแหง ท่วมไหม" หรือ "น้ำ 40 ซม. ขับผ่านได้ไหม"',
-}
+  text: lang === 'en'
+    ? `${t('chat.greeting')}
+
+${t('chat.answersInThai')}`
+    : t('chat.greeting'),
+})
 
 export default function ChatWidget({ open, setOpen, pendingMessage, onConsumed, onShowRoute, onOpenCamera }) {
-  const [messages, setMessages] = useState([GREETING])
+  const { t, lang } = useT()
+  const [messages, setMessages] = useState(() => [greeting(t, lang)])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [starters, setStarters] = useState([])
@@ -81,8 +88,8 @@ export default function ChatWidget({ open, setOpen, pendingMessage, onConsumed, 
           role: 'bot',
           text:
             err instanceof ApiError && err.status === 429
-              ? 'ถามถี่เกินไปครับ รอสักครู่แล้วลองใหม่'
-              : 'ขออภัยครับ ระบบขัดข้องชั่วคราว ลองถามใหม่อีกครั้ง',
+              ? t('chat.tooFast')
+              : t('chat.failed'),
           error: true,
         },
       ])
@@ -108,7 +115,7 @@ export default function ChatWidget({ open, setOpen, pendingMessage, onConsumed, 
       <button
         onClick={() => setOpen(true)}
         className="group fixed bottom-5 right-4 z-40 flex items-center gap-2.5 rounded-full bg-gradient-to-r from-sky-500 to-indigo-600 py-3 pl-3 pr-4 font-semibold text-white shadow-xl shadow-sky-950/60 ring-2 ring-sky-400/40 transition-transform hover:scale-105 active:scale-95"
-        aria-label="เปิดผู้ช่วย AI ถามเรื่องน้ำท่วม"
+        aria-label={t('chat.open')}
       >
         <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15">
           {/* A spark reads as "AI assistant" where a speech bubble reads as
@@ -124,9 +131,9 @@ export default function ChatWidget({ open, setOpen, pendingMessage, onConsumed, 
           </span>
         </span>
         <span className="hidden text-sm leading-tight sm:block">
-          ถาม AI
+          {t('chat.btn1')}
           <span className="block text-[11px] font-normal text-sky-100/90">
-            เรื่องน้ำท่วม
+            {t('chat.btn2')}
           </span>
         </span>
       </button>
@@ -143,16 +150,16 @@ export default function ChatWidget({ open, setOpen, pendingMessage, onConsumed, 
             </svg>
           </span>
           <div>
-          <h3 className="text-sm font-bold">ผู้ช่วย AI เรื่องน้ำท่วม</h3>
+          <h3 className="text-sm font-bold">{t('chat.title')}</h3>
           <p className="text-xs text-slate-500">
-            {coords ? 'รู้ตำแหน่งคุณแล้ว ถาม "ใกล้ฉัน" ได้' : 'พิมพ์ชื่อถนนหรือเขตได้เลย'}
+            {coords ? t('chat.knowsLocation') : t('chat.typePlace')}
           </p>
           </div>
         </div>
         <button
           onClick={() => setOpen(false)}
           className="rounded-lg px-2 py-1 text-2xl leading-none text-slate-400 hover:bg-slate-800"
-          aria-label="ปิดแชท"
+          aria-label={t('chat.close')}
         >
           ×
         </button>
@@ -197,7 +204,7 @@ export default function ChatWidget({ open, setOpen, pendingMessage, onConsumed, 
                 onClick={() => onShowRoute(message.route)}
                 className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-left text-xs text-slate-200 hover:bg-slate-800"
               >
-                🗺 ดูเส้นทางนี้บนแผนที่
+                {t('chat.showRoute')}
               </button>
             )}
 
@@ -258,12 +265,12 @@ export default function ChatWidget({ open, setOpen, pendingMessage, onConsumed, 
           className="field"
           value={input}
           onChange={(event) => setInput(event.target.value)}
-          placeholder="พิมพ์คำถาม เช่น จากบางนาไปสีลม"
+          placeholder={t('chat.placeholder')}
           disabled={busy}
           maxLength={500}
         />
         <button type="submit" className="btn-primary px-4" disabled={busy || !input.trim()}>
-          ส่ง
+          {t('chat.send')}
         </button>
       </form>
     </div>

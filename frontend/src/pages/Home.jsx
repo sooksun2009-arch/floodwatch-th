@@ -129,7 +129,7 @@ function SafetyNotice() {
   )
 }
 
-function Legend({ selected, onToggle, onReset }) {
+function Legend({ selected, onToggle, onReset, hasCameras }) {
   const { t } = useT()
   // On a phone the full key covers a third of the map and sits over marker
   // popups, so it starts collapsed there and expanded on a wider screen.
@@ -160,7 +160,11 @@ function Legend({ selected, onToggle, onReset }) {
               // Short labels from the dictionary, not from LEVELS: that constant
               // is Thai, and the legend is the first thing a visitor reads.
               ...Object.entries(LEVELS).map(([key, value]) => [key, t(`level.${key}.short`), value.color]),
-              ['cameras', t('legend.cameras'), '#0ea5e9'],
+              // Only when there are cameras to see. The app has none of its
+              // own, so this row was a colour with nothing behind it —
+              // a legend entry for a layer that is always empty teaches
+              // people that the legend does not mean anything.
+              ...(hasCameras ? [['cameras', t('legend.cameras'), '#0ea5e9']] : []),
               ['stations', t('legend.gauges'), SITUATIONS[5].color],
             ].map(([key, label, color]) => {
               const picking = selected.size > 0
@@ -401,6 +405,7 @@ export default function Home() {
             selected={selected}
             onToggle={toggleCategory}
             onReset={() => setSelected(new Set())}
+            hasCameras={cameras.length > 0}
           />
           {mapError && (
             <div className="absolute inset-x-3 top-3 z-20 rounded-xl border border-red-800 bg-red-950/90 px-3 py-2 text-sm text-red-200 backdrop-blur">

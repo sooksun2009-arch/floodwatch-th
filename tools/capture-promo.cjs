@@ -5,7 +5,11 @@
 
 const fs = require('fs')
 const path = require('path')
-const puppeteer = require('puppeteer-core')
+// puppeteer-core is declared by the frontend, which is where the browser tests
+// live; resolve it from there rather than adding a second copy for this script.
+const puppeteer = require(require.resolve('puppeteer-core', {
+  paths: [path.join(__dirname, '..', 'frontend')],
+}))
 
 // Reuses the browser the smoke test already found. Set CHROME_PATH if it is
 // somewhere else; hardcoding Windows paths here got them mangled once already.
@@ -46,6 +50,23 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms))
     console.log('  ' + file + '  ' + Math.round(fs.statSync(file).size / 1024) + ' KB')
   }
   await shot('1-แผนที่.png')
+
+  // Same view with the legend folded away. Expanded, it explains the colours,
+  // which is what a first-time visitor needs; folded, the pins are the picture,
+  // which is what a post needs. Shoot both and let the poster choose.
+  const folded = await page.evaluate(() => {
+    const b = document.querySelector('[aria-label="ย่อคำอธิบายสัญลักษณ์"]')
+    b?.click()
+    return Boolean(b)
+  })
+  if (folded) { await wait(1200); await shot('1b-แผนที่-ไม่มีคำอธิบาย.png') }
+  else console.log('  (ย่อคำอธิบายไม่ได้ ข้ามภาพ 1b)')
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('button')].find((x) =>
+      x.textContent.trim() === 'สัญลักษณ์')
+    b?.click()
+  })
+  await wait(1000)
 
   // Radar on, so the post can show what the rain layer looks like.
   await page.evaluate(() => {

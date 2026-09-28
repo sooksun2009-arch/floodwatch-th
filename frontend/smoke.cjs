@@ -330,6 +330,46 @@ const check = (name, ok, extra = '') => {
   })
   check('ปุ่มลอยบนแผนที่ไม่ทับกัน', overlaps.length === 0, overlaps.join(' · '))
 
+  // The OpenStreetMap credit has to stay readable. Using the map is
+  // conditional on showing it, and it sits in the same corner the buttons keep
+  // moving into: "แจ้งน้ำท่วม" covered 96 of its 161 pixels on a phone and the
+  // chat button covered 54 on a wide screen, both shipped. Checked at two
+  // widths because the two screens put a different button in that corner.
+  const coverage = async () => page.evaluate(() => {
+    const attr = document.querySelector('.maplibregl-ctrl-attrib')
+    if (!attr) return { missing: true }
+    const a = attr.getBoundingClientRect()
+    const hits = []
+    for (const el of document.querySelectorAll('button, a')) {
+      if (attr.contains(el)) continue
+      const r = el.getBoundingClientRect()
+      const style = getComputedStyle(el)
+      if (r.width < 8 || style.visibility === 'hidden') continue
+      const dx = Math.min(a.right, r.right) - Math.max(a.left, r.left)
+      const dy = Math.min(a.bottom, r.bottom) - Math.max(a.top, r.top)
+      if (dx > 1 && dy > 1) {
+        const label = (el.getAttribute('aria-label') || el.textContent || '').trim()
+        hits.push(`${label.slice(0, 18)} บัง ${Math.round(dx)} จาก ${Math.round(a.width)} px`)
+      }
+    }
+    return { hits, onscreen: a.left >= -1 && a.top >= -1 && a.bottom <= innerHeight + 1 }
+  })
+
+  const attrWide = await coverage()
+  check('เครดิต OpenStreetMap ไม่ถูกปุ่มบัง (จอกว้าง)',
+        !attrWide.missing && attrWide.hits.length === 0,
+        attrWide.missing ? 'ไม่พบเครดิตบนแผนที่' : attrWide.hits.join(' · '))
+  check('และอยู่ในกรอบหน้าจอ', attrWide.onscreen === true, JSON.stringify(attrWide))
+
+  await page.setViewport({ width: 430, height: 932 })
+  await new Promise((r) => setTimeout(r, 1500))
+  const attrPhone = await coverage()
+  check('เครดิต OpenStreetMap ไม่ถูกปุ่มบัง (บนมือถือ)',
+        !attrPhone.missing && attrPhone.hits.length === 0,
+        attrPhone.missing ? 'ไม่พบเครดิตบนแผนที่' : attrPhone.hits.join(' · '))
+  await page.setViewport({ width: 1400, height: 900 })
+  await new Promise((r) => setTimeout(r, 1500))
+
   // Rain features are off until a key is configured, and the button that
   // controls them must be absent rather than present and broken.
   const rain = await page.evaluate(async () => {

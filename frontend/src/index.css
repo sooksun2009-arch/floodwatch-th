@@ -66,6 +66,22 @@
   background: rgb(15 23 42 / 0.85) !important;
   font-size: 10px;
 }
+/* Lift the credit clear of the buttons parked in the same corner. It was more
+   than half covered — by "แจ้งน้ำท่วม" on a phone and by the chat button on a
+   wide screen — and crediting OpenStreetMap is a condition of using the map,
+   not decoration that may be painted over.
+
+   60px is measured, not guessed: on a phone the report button reaches 46px up
+   from the map's bottom edge, and on a wide screen it moves to 96px and leaves
+   the chat button ending 50px up. 60 clears the first and lands in the gap
+   between the two on the second. frontend/smoke.cjs checks both widths, so
+   moving either button will say so rather than quietly re-cover this.
+
+   !important because maplibre's own stylesheet sets bottom: 0 at the same
+   specificity and loads after this file. */
+.maplibregl-ctrl-bottom-right {
+  bottom: 3.75rem !important;
+}
 .maplibregl-ctrl-attrib a {
   color: rgb(148 163 184) !important;
 }

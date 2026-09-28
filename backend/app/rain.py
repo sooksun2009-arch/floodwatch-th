@@ -180,6 +180,73 @@ def describe_failure(exc: BaseException) -> str:
     return " ".join(detail.split())
 
 
+# ---------------------------------------------------------------- budget
+
+class _Budget:
+    """A spend limit for outbound calls, per minute and per day.
+
+    Exists because the tile proxy emptied the whole key's allowance and every
+    other rain call started returning 403 — a cache per tile is not a limit,
+    it only stops the *same* tile being fetched twice, and a map being panned
+    asks for different tiles every time.
+
+    Tiles and services keep separate daily budgets so the cheap, high-volume
+    thing cannot starve the one someone is waiting on.
+    """
+
+    def __init__(self, per_min: int, per_day: int):
+        self.per_min = per_min
+        self.per_day = per_day
+        self.minute = 0.0
+        self.minute_used = 0
+        self.day = 0.0
+        self.day_used = 0
+
+    def take(self) -> bool:
+        now = time.time()
+        if now - self.minute >= 60:
+            self.minute, self.minute_used = now, 0
+        if now - self.day >= 86400:
+            self.day, self.day_used = now, 0
+        if self.minute_used >= self.per_min or self.day_used >= self.per_day:
+            return False
+        self.minute_used += 1
+        self.day_used += 1
+        return True
+
+    def state(self) -> dict:
+        return {"per_min": self.per_min, "used_this_min": self.minute_used,
+                "per_day": self.per_day, "used_today": self.day_used}
+
+
+_tile_budget: _Budget | None = None
+_service_budget: _Budget | None = None
+
+
+def budgets() -> tuple[_Budget, _Budget]:
+    global _tile_budget, _service_budget
+    if _tile_budget is None:
+        _tile_budget = _Budget(settings.rain_tiles_per_min, settings.rain_tiles_per_day)
+    if _service_budget is None:
+        _service_budget = _Budget(settings.rain_rate_per_min, settings.rain_services_per_day)
+    return _tile_budget, _service_budget
+
+
+class QuotaExhausted(Exception):
+    """Refused here rather than upstream, so the refusal costs nothing and
+    cannot count against the limit that caused it."""
+
+
+def _spend(kind: str) -> None:
+    tiles, services = budgets()
+    budget = tiles if kind == "tile" else services
+    if not budget.take():
+        raise QuotaExhausted(
+            f"ใช้โควตา{'ไทล์' if kind == 'tile' else 'บริการ'}ครบแล้ว "
+            f"({budget.minute_used}/{budget.per_min} ต่อนาที, "
+            f"{budget.day_used}/{budget.per_day} ต่อวัน)")
+
+
 def _client() -> httpx.AsyncClient:
     return httpx.AsyncClient(
         base_url=settings.longdo_weather_base_url.rstrip("/"),
@@ -252,6 +319,7 @@ async def rain_now(path: list[list[float]]) -> dict | None:
     key = "now:" + ",".join(f"{c[0]:.2f}/{c[1]:.2f}" for c in ring[::5])
 
     async def fetch():
+        _spend("service")
         async with _client() as client:
             response = await client.post(
                 POLYGON_URL,
@@ -290,6 +358,7 @@ async def forecast_at(lat: float, lng: float) -> list[dict]:
     key = f"fc:{lat:.2f}/{lng:.2f}"
 
     async def fetch():
+        _spend("service")
         async with _client() as client:
             response = await client.get(FORECAST_AREA_URL, params={
                 "key": settings.longdo_api_key,
@@ -390,6 +459,7 @@ async def raining_cameras() -> dict:
                 "cameras": [], "scanned": 0}
 
     async def fetch():
+        _spend("service")
         async with _client() as client:
             response = await client.get(CAMERAS_URL,
                                         params={"key": settings.longdo_api_key})
@@ -437,6 +507,7 @@ async def radar_tile(z: int, x: int, y: int) -> tuple[bytes, str] | None:
         return None
 
     async def fetch():
+        _spend("tile")
         async with _client() as client:
             response = await client.get(
                 RADAR_TILE.format(z=z, x=x, y=y),
@@ -447,7 +518,10 @@ async def radar_tile(z: int, x: int, y: int) -> tuple[bytes, str] | None:
                     response.headers.get("content-type", "image/png"))
 
     try:
-        return await _cached(f"tile:{z}/{x}/{y}", settings.rain_cache_sec, fetch)
-    except Exception:
-        logger.info("ดึงไทล์เรดาร์ %s/%s/%s ไม่สำเร็จ", z, x, y)
+        return await _cached(f"tile:{z}/{x}/{y}", settings.rain_tile_cache_sec, fetch)
+    except QuotaExhausted as exc:
+        _remember_failure("tile", exc)
+        return None
+    except Exception as exc:
+        _remember_failure("tile", exc)
         return None

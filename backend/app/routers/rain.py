@@ -15,7 +15,12 @@ def status_():
     tiles served fine while every other call failed, and the only record was a
     log line unreachable from outside the container.
     """
-    return {"enabled": rain.enabled(), "last_failure": rain.LAST_FAILURE}
+    tiles, services = rain.budgets()
+    return {"enabled": rain.enabled(),
+            "last_failure": rain.LAST_FAILURE,
+            # What this deployment has spent. The upstream console shows the
+            # same numbers, but not while something is going wrong at 2am.
+            "budget": {"tiles": tiles.state(), "services": services.state()}}
 
 
 @router.get("/diagnose", response_model=dict)

@@ -166,6 +166,9 @@ class Settings(BaseSettings):
     # The radar itself refreshes about every ten minutes, so anything shorter
     # spends quota to receive the same picture.
     rain_cache_sec: int = 300
+    # Tiles are cached longer than that: a radar frame is the same picture for
+    # its whole ten-minute life, and tiles are what exhausts the quota.
+    rain_tile_cache_sec: int = 600
     # Width of the band around a route that counts as "on the way". Wider than
     # the flood corridor on purpose: a storm two kilometres up the road will be
     # over it shortly, while a flood two kilometres away will not.
@@ -175,6 +178,17 @@ class Settings(BaseSettings):
     # resolution against quota.
     rain_forecast_samples: int = 3
     rain_forecast_radius_km: float = 10.0
+
+    # Upstream allows 60 requests a minute and 5,000 a day across the whole
+    # key. Map tiles can spend that in minutes — one pan with the radar on is
+    # dozens of requests — and when they do, every other call gets a 403 as
+    # well. That happened: the radar took the cameras and the forecast down
+    # with it. So tiles and everything else draw from separate budgets, and
+    # both stay under the real ceiling.
+    rain_rate_per_min: int = 40
+    rain_tiles_per_min: int = 24
+    rain_tiles_per_day: int = 2500
+    rain_services_per_day: int = 1500
 
     # Shared secret for POST /api/stations/bma/ingest. The Bangkok drainage
     # site refuses connections from outside Thailand, so the container cannot

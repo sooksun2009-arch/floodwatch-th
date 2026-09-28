@@ -296,7 +296,12 @@ export default function MapView({
         // Radar covers Thailand only; asking for tiles beyond it wastes quota
         // to be told there is nothing there.
         bounds: [97.2, 5.4, 105.7, 20.6],
-        maxzoom: 12,
+        // Stop requesting new tiles past zoom 9 and stretch these instead.
+        // The radar's own resolution is about a kilometre, so sharper tiles
+        // carry no more information — and each zoom level past this asks for
+        // four times as many. Zoom 12 emptied the daily quota in one session
+        // and every other rain call started failing with it.
+        maxzoom: 9,
       })
       map.addLayer({
         id: 'radar-layer',

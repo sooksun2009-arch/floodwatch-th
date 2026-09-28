@@ -267,7 +267,10 @@ class Settings(BaseSettings):
     # parameters, but the feed returned exactly ten outlines for the whole
     # country -- which is the OGC default page size, not a dry country. Asking
     # explicitly is the difference between the first page and the data.
-    gistda_features_limit: int = 5000
+    # 5000 came back exactly full, which the truncation warning caught: that is
+    # a page boundary, not the end of the data. The whole feed is about 14 MB,
+    # comfortably under the download ceiling, so ask for all of it.
+    gistda_features_limit: int = 100000
 
     # Shared secret for POST /api/stations/bma/ingest. The Bangkok drainage
     # site refuses connections from outside Thailand, so the container cannot

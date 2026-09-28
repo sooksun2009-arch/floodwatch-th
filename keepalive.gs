@@ -95,7 +95,7 @@ function setup() {
   ScriptApp.newTrigger('keepAwake').timeBased().everyMinutes(PING_MINUTES).create();
 
   const result = keepAwake();
-  Logger.log('ตั้ง trigger ทุก %s นาทีแล้ว — ผลการยิงครั้งแรก: %s', PING_MINUTES, result);
+  Logger.log('ตั้ง trigger ทุก %s นาทีแล้ว — ผลการยิงครั้งแรก: %s', String(PING_MINUTES), result);
   return result;
 }
 
@@ -218,7 +218,7 @@ function relayBMA() {
         .match(/(1[2-5]\.\d{4,})\s*,\s*(9\d\.\d{4,}|10\d\.\d{4,})/);
       if (m) coords[id] = { lat: Number(m[1]), lng: Number(m[2]) };
     } catch (e) {
-      Logger.log('ดึงพิกัดสถานี %s ไม่ได้: %s', id, e);
+      Logger.log('ดึงพิกัดสถานี %s ไม่ได้: %s', String(id), e);
     }
     Utilities.sleep(COORDS_DELAY_MS);   // เว็บของหน่วยงานอื่น ค่อย ๆ ขอ
   }
@@ -307,7 +307,7 @@ function checkPending() {
   notify(subject, body);
   store.setProperty('pending_count', String(pending));
   store.setProperty('pending_at', String(now));
-  Logger.log('แจ้งเตือน: รออนุมัติ %s รายการ', pending);
+  Logger.log('แจ้งเตือน: รออนุมัติ %s รายการ', String(pending));
 }
 
 /**
@@ -347,7 +347,11 @@ function checkNewReports() {
   store.setProperty('seen_report_ids', ids.join(','));
 
   if (firstRun || !fresh.length) {
-    if (firstRun) Logger.log('จำรายงานปัจจุบันไว้ %s รายการ เริ่มเตือนจากรายการถัดไป', ids.length);
+    if (firstRun) {
+      // String() เพราะ Logger แปลงตัวเลขเป็น "10.0" ซึ่งอ่านแล้วสะดุด
+      // เป็นอาการเดียวกับที่เคยทำให้ chat id ออกมาเป็น 8.365650438E9 แล้วใช้ไม่ได้
+      Logger.log('จำรายงานปัจจุบันไว้ %s รายการ เริ่มเตือนจากรายการถัดไป', String(ids.length));
+    }
     return;
   }
 
@@ -366,7 +370,7 @@ function checkNewReports() {
   lines.push('ถ้าเป็นรายงานที่ไม่จริงหรือไม่เหมาะสม ลบได้ที่ ' + BASE_URL + '/admin');
 
   notify('FloodWatch TH: มีรายงานใหม่ ' + fresh.length + ' รายการ', lines.join(NEWLINE));
-  Logger.log('แจ้งเตือนรายงานใหม่ %s รายการ', fresh.length);
+  Logger.log('แจ้งเตือนรายงานใหม่ %s รายการ', String(fresh.length));
 }
 
 /** ส่งทั้งอีเมลและ Telegram (ถ้าตั้งค่าไว้) */

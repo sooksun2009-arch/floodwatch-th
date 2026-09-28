@@ -28,22 +28,32 @@ function RadarCaption() {
     }
   }, [])
 
-  let text = 'กำลังตรวจสภาพฝน…'
+  let headline = 'กำลังตรวจสภาพฝน…'
+  let detail = null
   if (!state.loading) {
     if (state.error || state.data?.available === false) {
-      text = 'ตรวจสภาพฝนไม่ได้ตอนนี้'
+      headline = 'ตรวจสภาพฝนไม่ได้ตอนนี้'
     } else {
       const wet = state.data?.cameras?.length ?? 0
       const scanned = state.data?.scanned ?? 0
-      text = wet
-        ? `ขณะนี้ฝนตกที่กล้อง ${wet} จุด จาก ${scanned} จุดทั่วประเทศ`
-        : `ขณะนี้ไม่มีฝนที่กล้องทั้ง ${scanned} จุดทั่วประเทศ`
+      // "ฝนตกที่กล้อง" was the data model talking, not a sentence anyone reads.
+      // What these are is points around the country where rain is measured;
+      // that they happen to be traffic cameras is a detail, kept in the small
+      // print because it is what makes the number believable.
+      headline = wet
+        ? `ตอนนี้ฝนตกอยู่ ${wet} จาก ${scanned} จุดวัดทั่วประเทศ`
+        : `ตอนนี้ไม่มีฝนเลย ทั้ง ${scanned} จุดวัดทั่วประเทศ`
+      const at = state.data?.last_updated ? new Date(state.data.last_updated) : null
+      detail = at && !Number.isNaN(at.getTime())
+        ? `ข้อมูล ${at.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น. · จุดวัดคือกล้องจราจรสาธารณะ`
+        : 'จุดวัดคือกล้องจราจรสาธารณะทั่วประเทศ'
     }
   }
 
   return (
-    <div className="absolute left-3 top-14 z-10 max-w-[15rem] rounded-xl border border-slate-700 bg-slate-950/90 px-2.5 py-1.5 text-xs text-slate-300 backdrop-blur">
-      {text}
+    <div className="absolute left-3 top-14 z-10 max-w-[16rem] rounded-xl border border-slate-700 bg-slate-950/90 px-2.5 py-1.5 text-xs text-slate-300 backdrop-blur">
+      {headline}
+      {detail && <span className="mt-0.5 block text-[11px] text-slate-500">{detail}</span>}
       <span className="mt-0.5 block text-[11px] text-slate-500">
         พื้นที่ที่ไม่มีสี = ไม่มีฝน
       </span>

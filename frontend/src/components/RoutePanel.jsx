@@ -628,6 +628,8 @@ export default function RoutePanel({
                 <p className="font-semibold">🌧️ {result.rain.summary}</p>
                 <p className="mt-0.5 text-xs text-indigo-300/80">
                   ฝนตกไม่ได้แปลว่าถนนท่วม แต่เป็นสัญญาณว่าอาจแย่ลงระหว่างทาง
+                  {result.rain.now?.source === 'cameras' &&
+                    ' · วัดจากกล้องจราจรสาธารณะที่อยู่บนเส้นทาง'}
                 </p>
               </div>
             )}

@@ -339,6 +339,32 @@ check("ไม่มีอะไรต้องหลบ -> ไม่ส่ง av
 
 # ------------------------------------------- the line that must not be crossed
 
+
+def a_wet_tile():
+    """A fully opaque tile — what observed water looks like to the pixel check."""
+    import io as _io
+
+    from PIL import Image as _Image
+    buf = _io.BytesIO()
+    _Image.new("RGBA", (256, 256), (56, 130, 246, 255)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+WET = a_wet_tile()
+
+
+def wet_tiles(request):
+    """Every tile comes back as water; everything else 404s.
+
+    The route check reads tiles now, not GeoJSON: the feed's truncated page
+    covered only the north, so a route through the flooding around Ayutthaya
+    was told there was nothing there.
+    """
+    if "/tms/" in request.url.path:
+        return httpx.Response(200, content=WET, headers={"content-type": "image/png"})
+    return httpx.Response(404, text="{}")
+
+
 reset()
 with TestClient(app) as c:
     # A route through water the satellite saw, with nobody having reported
@@ -347,10 +373,8 @@ with TestClient(app) as c:
     # orbit, up to a day old, and a raised road through flooded fields is
     # ordinary here. If this check ever fails, an observation has been promoted
     # into a claim it cannot support.
-    everywhere = [[[100.0, 13.0], [101.5, 13.0], [101.5, 14.5],
-                   [100.0, 14.5], [100.0, 13.0]]]
     body = with_upstream(
-        serve_features(features(everywhere)),
+        wet_tiles,
         lambda: asyncio.to_thread(
             lambda: c.post("/api/route/check", json={
                 "origin": {"lat": 13.7460, "lng": 100.5340},

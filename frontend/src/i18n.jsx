@@ -97,7 +97,7 @@ const STRINGS = {
     'layer.radar': 'เรดาร์ฝน',
     'layer.satellite': 'น้ำท่วมจากดาวเทียม',
     'layer.satellite.caption':
-      'พื้นที่สีส้มคือบริเวณที่<b>ดาวเทียมเห็นน้ำใน{span}</b> — ไม่ใช่ภาพสด และ<b>ไม่ได้แปลว่าถนนในนั้นผ่านไม่ได้</b> ถนนยกสูงกลางทุ่งที่น้ำท่วมเป็นเรื่องปกติ',
+      'พื้นที่ที่ระบายสีทับคือบริเวณที่<b>ดาวเทียมเห็นน้ำใน{span}</b> — ไม่ใช่ภาพสด และ<b>ไม่ได้แปลว่าถนนในนั้นผ่านไม่ได้</b> ถนนยกสูงกลางทุ่งที่น้ำท่วมเป็นเรื่องปกติ',
     'layer.satellite.credit': 'ข้อมูล GISTDA · ใช้ประกอบการตัดสินใจ ไม่ใช่คำยืนยัน',
     'span.1day': 'วันที่ผ่านมา',
     'span.3days': '3 วันที่ผ่านมา',
@@ -335,7 +335,7 @@ const STRINGS = {
     'layer.radar': 'Rain radar',
     'layer.satellite': 'Flooding seen from orbit',
     'layer.satellite.caption':
-      'Orange marks where a <b>satellite saw water over the {span}</b> — not a live image, and <b>not a claim that roads there are impassable</b>. Raised roads through flooded fields are ordinary in Thailand.',
+      'The shaded areas are where a <b>satellite saw water over the {span}</b> — not a live image, and <b>not a claim that roads there are impassable</b>. Raised roads through flooded fields are ordinary in Thailand.',
     'layer.satellite.credit': 'Data from GISTDA · context for your decision, not confirmation',
     'span.1day': 'past day',
     'span.3days': 'past 3 days',

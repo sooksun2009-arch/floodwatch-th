@@ -27,6 +27,7 @@ process: the page asks this app for tiles and this app asks GISTDA.
 import asyncio
 import io
 import logging
+import math
 
 import httpx
 from PIL import Image
@@ -482,3 +483,64 @@ def path_enters(path, rings) -> bool:
             if point_in_ring(lng, lat, ring):
                 return True
     return False
+
+
+# ------------------------------------------------- reading the picture itself
+
+def _tile_xy(lat: float, lng: float, z: int) -> tuple[int, int, int, int]:
+    """Tile index and the pixel inside it for a coordinate.
+
+    Plain Web Mercator. Written out rather than pulled in as a dependency
+    because it is six lines and the alternative is another package on a small
+    instance.
+    """
+    n = 1 << z
+    x = (lng + 180.0) / 360.0 * n
+    lat_rad = math.radians(max(-85.05, min(85.05, lat)))
+    y = (1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n
+    return int(x), int(y), int((x - int(x)) * 256), int((y - int(y)) * 256)
+
+
+async def route_touches_water(path) -> bool | None:
+    """Whether a route crosses water the satellite saw.
+
+    Returns None when the question could not be asked — no key, no quota, a
+    failed fetch — which the caller must not read as "no". A quiet no and an
+    unanswered question are different things, and this project has confused
+    them enough times.
+    """
+    if not enabled() or not path:
+        return None
+
+    z = settings.gistda_route_zoom
+    step = max(1, len(path) // settings.gistda_route_samples)
+    samples = list(path[::step])
+    if path and samples[-1] != path[-1]:
+        samples.append(path[-1])
+
+    # Group by tile so a route along one road fetches one picture, not twenty.
+    wanted: dict[tuple[int, int], list[tuple[int, int]]] = {}
+    for lat, lng in samples:
+        x, y, px, py = _tile_xy(lat, lng, z)
+        wanted.setdefault((x, y), []).append((px, py))
+
+    asked = 0
+    for (x, y), pixels in wanted.items():
+        got = await tile(product_or_default(None), z, x, y)
+        if got is None:
+            continue
+        asked += 1
+        try:
+            image = Image.open(io.BytesIO(got[0])).convert("RGBA")
+        except Exception as exc:  # noqa: BLE001 - a bad tile is not a verdict
+            _remember_failure("route_tile", exc)
+            continue
+        for px, py in pixels:
+            if image.getpixel((min(px, image.width - 1),
+                               min(py, image.height - 1)))[3] >= settings.gistda_route_alpha:
+                _remember_success("route_tile")
+                return True
+
+    _remember_success("route_tile")
+    # Nothing found, but only meaningful if we actually saw some tiles.
+    return False if asked else None

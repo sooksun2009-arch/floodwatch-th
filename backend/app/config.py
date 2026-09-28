@@ -267,6 +267,23 @@ class Settings(BaseSettings):
     # the data. Tighter than the rain corridor (4 km) because this is water on
     # the ground, and a field flooded a kilometre away says nothing about a road.
     gistda_route_corridor_km: float = 0.3
+    # Whether a route runs through observed water is decided by reading the
+    # same picture the visitor sees, at this zoom. The GeoJSON was the first
+    # attempt and it cannot answer the question: the feed has no way to ask for
+    # one region, the whole of it is too large to parse here, and the truncated
+    # page turned out to cover only the north -- so routes through the worst
+    # flooding in the country, around Ayutthaya, saw nothing at all.
+    #
+    # Tiles have none of those problems. They cover everywhere, they are
+    # already budgeted and cached for six hours, and what raises the flag is
+    # exactly what is drawn on screen.
+    gistda_route_zoom: int = 12
+    # Points sampled along the route. Most fall in the same few tiles, so this
+    # costs far less than it looks.
+    gistda_route_samples: int = 24
+    # How opaque a pixel has to be before it counts as water rather than the
+    # feathered edge of a shape.
+    gistda_route_alpha: int = 40
     # How many flood areas to ask for in one request. The Swagger lists no
     # parameters, but the feed returned exactly ten outlines for the whole
     # country -- which is the OGC default page size, not a dry country. Asking

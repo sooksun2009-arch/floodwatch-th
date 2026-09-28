@@ -491,12 +491,18 @@ async def check_route(db: Session, origin: tuple[float, float], dest: tuple[floa
     # about an area, up to a day old, and a raised road through flooded fields
     # is ordinary here. It is allowed to make this app go and look for a way
     # round; it is never allowed to tell anyone a road is impassable.
-    satellite_rings = await flood_extent.all_rings()
-    through_satellite = bool(satellite_rings) and flood_extent.path_near(
-        analyses[0].geometry.path, satellite_rings)
+    # Read from the tiles, which cover the whole country, rather than from the
+    # GeoJSON, whose truncated page covered only the north -- so a route
+    # through the worst flooding around Ayutthaya saw nothing at all. None
+    # means the question could not be asked and is not treated as a no.
+    through_satellite = await flood_extent.route_touches_water(
+        analyses[0].geometry.path) is True
 
     if reported_risk or through_satellite:
         search_bbox = path_bbox(analyses[0].geometry.path, 5.0)
+        # Reported points always; satellite outlines only where the feed
+        # actually reached, which today is the north and northeast. Absent
+        # there, the reported points still steer the detour.
         polygons = _merge_polygons(
             avoid_polygons(db, search_bbox),
             await flood_extent.avoid_near(search_bbox),

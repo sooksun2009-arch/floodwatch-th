@@ -258,6 +258,21 @@ check("ข้อมูลใหญ่เกินเพดาน -> ไม่แ
 check("และบอกไว้ว่าทำไมถึงไม่มีข้อมูล",
       "ใหญ่เกิน" in fe.LAST_FAILURE.get("features", ""), fe.LAST_FAILURE)
 
+# The outlines are small patches, so "inside" is the wrong question -- this is
+# the check that would have caught the layer quietly never firing in production.
+reset()
+TINY = [[100.6000, 13.7300], [100.6002, 13.7300],
+        [100.6002, 13.7302], [100.6000, 13.7302], [100.6000, 13.7300]]
+road = [(13.7310, 100.6001), (13.7340, 100.6001)]
+check("ถนนเฉียดหย่อมน้ำเล็ก ๆ -> จับได้",
+      fe.path_near(road, [TINY], 0.3) is True)
+check("แต่ถ้าถามว่าตกอยู่ในหย่อมพอดีไหม -> ไม่เจอ (เหตุผลที่ต้องวัดระยะ)",
+      fe.path_enters(road, [TINY]) is False)
+check("ถนนไกลออกไป -> ไม่จับ",
+      fe.path_near([(13.9000, 100.6001)], [TINY], 0.3) is False)
+check("ยังไม่เคยโหลดข้อมูล -> บอกว่า None ไม่ใช่ 0",
+      fe.cached_ring_count() is None, fe.cached_ring_count())
+
 reset()
 check("รวมรูปจาก 2 แหล่งเข้าด้วยกันได้",
       len(routing._merge_polygons(

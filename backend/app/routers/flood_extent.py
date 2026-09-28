@@ -24,6 +24,12 @@ def status_():
         # instead of leaving them to assume it is live.
         "cache_sec": flood_extent.settings.gistda_tile_cache_sec,
         "last_failure": flood_extent.LAST_FAILURE,
+        # How many flood outlines are loaded. None means nothing has been
+        # fetched yet; 0 means the country is dry as far as this dataset knows.
+        # Without the distinction, a silent failure and a dry week look the
+        # same from outside, which is the fault this project keeps repeating.
+        "rings_loaded": flood_extent.cached_ring_count(),
+        "route_corridor_km": flood_extent.settings.gistda_route_corridor_km,
         "budget": flood_extent.budget().state(),
     }
 

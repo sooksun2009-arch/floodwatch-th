@@ -363,8 +363,47 @@ async def avoid_near(bbox) -> dict | None:
     return {"type": "MultiPolygon", "coordinates": out} if out else None
 
 
+def cached_ring_count(product: str | None = None) -> int | None:
+    """How many outlines are in hand, or None if none have been fetched yet.
+
+    Reported by /status so that "no flooding on your route" can be told from
+    "this never loaded". Reads the cache only -- asking it must never trigger
+    a country-sized download.
+    """
+    entry = _cache._entries.get(f"features:{product_or_default(product)}")
+    return len(entry.value) if entry else None
+
+
+def path_near(path, rings, corridor_km: float | None = None) -> bool:
+    """Whether a route runs within corridor_km of observed water.
+
+    Not point-in-polygon. The published outlines are many small patches --
+    tens of metres across -- and a route path is sampled far more coarsely
+    than that, so asking whether a path point lands inside one answers "no"
+    almost regardless of the truth. Distance to the patch is the question the
+    data can actually answer.
+    """
+    if not rings or not path:
+        return False
+    km = settings.gistda_route_corridor_km if corridor_km is None else corridor_km
+    # Degrees, at Thailand's latitudes. Longitude is narrower than latitude
+    # here; using the latitude figure for both would search a wider east-west
+    # band than intended, so each gets its own.
+    pad_lat = km / 111.0
+    pad_lng = km / 105.0
+
+    boxes = [_bounds(r) for r in rings]
+    for lat, lng in path:
+        for minx, miny, maxx, maxy in boxes:
+            if (minx - pad_lng <= lng <= maxx + pad_lng
+                    and miny - pad_lat <= lat <= maxy + pad_lat):
+                return True
+    return False
+
+
 def path_enters(path, rings) -> bool:
-    """Whether any point of a route path falls inside an observed flood area."""
+    """Strictly inside an outline. Kept for callers that want the narrow test;
+    routing uses path_near, for the reasons written there."""
     for lat, lng in path:
         for ring in rings:
             if point_in_ring(lng, lat, ring):

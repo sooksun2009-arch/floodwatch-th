@@ -250,6 +250,14 @@ class Settings(BaseSettings):
     # water comes back as no route at all.
     gistda_avoid_max_polygons: int = 30
     gistda_avoid_grid_deg: float = 0.002
+    # How close observed water has to be to the road before it is worth saying
+    # anything. The published outlines turn out to be many small patches -- one
+    # sampled was about twenty metres across -- so asking whether the route
+    # passes *inside* one almost never fires: the path is sampled far more
+    # coarsely than that. Distance to the patch is the question that matches
+    # the data. Tighter than the rain corridor (4 km) because this is water on
+    # the ground, and a field flooded a kilometre away says nothing about a road.
+    gistda_route_corridor_km: float = 0.3
 
     # Shared secret for POST /api/stations/bma/ingest. The Bangkok drainage
     # site refuses connections from outside Thailand, so the container cannot

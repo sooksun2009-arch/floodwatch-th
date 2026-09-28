@@ -492,7 +492,7 @@ async def check_route(db: Session, origin: tuple[float, float], dest: tuple[floa
     # is ordinary here. It is allowed to make this app go and look for a way
     # round; it is never allowed to tell anyone a road is impassable.
     satellite_rings = await flood_extent.all_rings()
-    through_satellite = bool(satellite_rings) and flood_extent.path_enters(
+    through_satellite = bool(satellite_rings) and flood_extent.path_near(
         analyses[0].geometry.path, satellite_rings)
 
     if reported_risk or through_satellite:
@@ -524,7 +524,7 @@ async def check_route(db: Session, origin: tuple[float, float], dest: tuple[floa
     # fussy, and because the honest version of this sentence is the whole
     # point: water was seen from orbit, not on this road, and not today.
     if through_satellite:
-        seen = ("เส้นทางนี้ผ่านพื้นที่ที่ดาวเทียมเห็นน้ำในช่วงหลายวันที่ผ่านมา "
+        seen = ("เส้นทางนี้ผ่านใกล้พื้นที่ที่ดาวเทียมเห็นน้ำในช่วงหลายวันที่ผ่านมา "
                 "ไม่ได้แปลว่าถนนผ่านไม่ได้ และไม่ใช่ภาพสด — "
                 "ถ้ามีเส้นเลี่ยงให้เลือก ระบบจะเสนอไว้ด้านล่าง")
         degraded = f"{degraded} {seen}" if degraded else seen

@@ -779,6 +779,15 @@ export default function MapView({
     // reader started in, and only new reports would come through translated.
   }, [reports, cameras, stations, routes, lang])
 
+  // The credit belongs to the style, which is built once when the map is
+  // created, so switching language left it in the language the reader
+  // started in. Rewriting the node is cheaper than rebuilding the style, and
+  // the string is ours -- it never comes from a report.
+  useEffect(() => {
+    const node = containerRef.current?.querySelector('.maplibregl-ctrl-attrib-inner')
+    if (node) node.textContent = t('map.attribution')
+  }, [t])
+
   // Lift the OpenStreetMap credit clear of whatever is parked in that corner,
   // measured rather than guessed. A fixed offset was correct twice and wrong
   // the third time: adding one line to the safety notice moved the map down

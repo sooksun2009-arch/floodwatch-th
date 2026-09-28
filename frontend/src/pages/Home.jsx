@@ -557,38 +557,33 @@ export default function Home() {
             {t('route.disclosure')}
           </summary>
 
-          <p className="mt-3 font-semibold text-slate-300">ข้อจำกัดที่ต้องรู้</p>
+          <p className="mt-3 font-semibold text-slate-300">{t('disc.limits')}</p>
           <p className="mt-1">
-            ระบบครอบคลุม<strong>เฉพาะจุดที่มีผู้แจ้งหรือหน่วยงานรายงาน</strong> ไม่ใช่ทุกถนน
-            การที่เส้นทางขึ้นว่า &ldquo;ไปได้&rdquo; แปลว่ายังไม่มีใครแจ้ง ไม่ใช่การยืนยันว่าถนนแห้ง
-            ควรตรวจกับภาพกล้องก่อนตัดสินใจเสมอ ระบบนี้ไม่ใช่ประกาศทางการ
+            <span dangerouslySetInnerHTML={{ __html: t('disc.limitsBody') }} />
           </p>
 
-          <p className="mt-3 font-semibold text-slate-300">แหล่งข้อมูล</p>
+          <p className="mt-3 font-semibold text-slate-300">{t('disc.sources')}</p>
           <ul className="mt-1 space-y-0.5">
-            <li>• รายงานจากผู้ใช้ทั่วไป ผ่านการตรวจสอบโดยผู้ดูแลก่อนขึ้นแผนที่</li>
-            <li>• รายงานจากหน่วยงาน ที่ผู้ดูแลนำเข้าระบบ</li>
-            <li>• ภาพกล้อง CCTV จากหน่วยงานเจ้าของกล้องแต่ละแห่ง (ระบุชื่อในหน้ากล้อง)</li>
+            <li>{t('disc.src1')}</li>
+            <li>{t('disc.src2')}</li>
+            <li>{t('disc.src3')}</li>
             <li>
-              • แผนที่และเส้นทาง:{' '}
+              • {t('disc.basemap')}{' '}
               <a
                 className="text-sky-400 hover:underline"
                 href="https://www.openstreetmap.org/copyright"
                 target="_blank"
                 rel="noreferrer"
               >
-                ผู้ร่วมสร้าง OpenStreetMap
+                {t('map.attribution')}
               </a>
               , OSRM / OpenRouteService
             </li>
           </ul>
 
-          <p className="mt-3 font-semibold text-slate-300">ความเป็นส่วนตัว</p>
+          <p className="mt-3 font-semibold text-slate-300">{t('disc.privacy')}</p>
           <p className="mt-1">
-            ระบบ<strong>ไม่เก็บ</strong>ต้นทาง-ปลายทางที่คุณค้นหา และไม่เก็บประวัติการเดินทาง
-            ตำแหน่ง GPS ใช้ในเบราว์เซอร์เพื่อคำนวณผลเท่านั้น รูปที่อัปโหลดจะถูกลบข้อมูล EXIF
-            (รวมพิกัดกล้อง) ก่อนบันทึก ส่วนคำถามในแชทและหมายเลข IP ของผู้แจ้งจะถูกเก็บไว้
-            เพื่อป้องกันการก่อกวนและปรับปรุงระบบเท่านั้น
+            <span dangerouslySetInnerHTML={{ __html: t('disc.privacyBody') }} />
           </p>
         </details>
       </div>

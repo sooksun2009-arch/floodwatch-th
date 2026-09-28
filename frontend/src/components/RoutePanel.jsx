@@ -84,6 +84,10 @@ function EndpointInput({ id, label, badge, value, point, onChange, onPick, picki
   )
 }
 
+function Rich({ html, className }) {
+  return <p className={className} dangerouslySetInnerHTML={{ __html: html }} />
+}
+
 function HowTo({ onClose }) {
   const { t, lang } = useT()
   return (
@@ -112,20 +116,19 @@ function HowTo({ onClose }) {
 
         <div className="space-y-4 p-4 text-sm leading-relaxed text-slate-300">
           <section>
-            <h4 className="font-semibold text-slate-100">1. บอกว่าจะไปไหน</h4>
+            <h4 className="font-semibold text-slate-100">{t('how.1')}</h4>
             <p className="mt-1">
-              พิมพ์ชื่อถนน เขต หรือจังหวัดในช่อง <strong>ต้นทาง</strong> และ{' '}
-              <strong>ปลายทาง</strong> เช่น &ldquo;บางนา&rdquo; หรือ &ldquo;ถนนรามคำแหง&rdquo;
+              <span dangerouslySetInnerHTML={{ __html: t('how.1body') }} />
             </p>
             <ul className="mt-2 space-y-1 text-slate-400">
-              <li>📍 ใช้ตำแหน่งปัจจุบันของคุณ (ต้องอนุญาตการเข้าถึงตำแหน่ง)</li>
-              <li>🗺 ปักหมุดเองบนแผนที่ แม่นที่สุดถ้าชื่อสถานที่ไม่ชัด</li>
-              <li>⇅ สลับต้นทางกับปลายทาง สำหรับเช็คขากลับ</li>
+              <li>{t('how.1gps')}</li>
+              <li>{t('how.1pin')}</li>
+              <li>{t('how.1swap')}</li>
             </ul>
           </section>
 
           <section>
-            <h4 className="font-semibold text-slate-100">2. อ่านคำตัดสิน</h4>
+            <h4 className="font-semibold text-slate-100">{t('how.2')}</h4>
             <div className="mt-2 space-y-1.5">
               {Object.entries(VERDICTS).map(([key, v]) => (
                 <div key={key} className="flex items-center gap-2">
@@ -134,57 +137,49 @@ function HowTo({ onClose }) {
                   >
                     {v.icon}
                   </span>
-                  <span>{v.label}</span>
+                  <span>{t(`verdict.${key}`)}</span>
                 </div>
               ))}
             </div>
           </section>
 
           <section>
-            <h4 className="font-semibold text-slate-100">3. ตรวจหลักฐาน 3 ชั้น</h4>
+            <h4 className="font-semibold text-slate-100">{t('how.3')}</h4>
             <ol className="mt-1 space-y-1 text-slate-400">
               <li>
-                <strong className="text-slate-300">กล้อง CCTV</strong> — เรียงตามกิโลเมตรของเส้นทาง
-                กดดูภาพจริงก่อนออกรถ เชื่อถือได้ที่สุดเพราะเห็นกับตา
+                <span dangerouslySetInnerHTML={{ __html: t('how.3cam') }} />
               </li>
               <li>
-                <strong className="text-slate-300">รายงานจากผู้ใช้</strong> — บอกว่าจะเจอที่ กม.
-                ไหน ลึกเท่าไหร่ มีคนยืนยันกี่ราย กดยืนยันหรือแย้งได้
+                <span dangerouslySetInnerHTML={{ __html: t('how.3rep') }} />
               </li>
               <li>
-                <strong className="text-slate-300">คลองใกล้เส้นทาง</strong> — ระดับน้ำจากเครื่องวัด
-                ของหน่วยงาน คลองล้นตลิ่งมักทำให้ถนนท่วมตามในเวลาไม่นาน
+                <span dangerouslySetInnerHTML={{ __html: t('how.3gauge') }} />
               </li>
             </ol>
           </section>
 
           <section>
-            <h4 className="font-semibold text-slate-100">4. ถามเป็นภาษาพูดก็ได้</h4>
+            <h4 className="font-semibold text-slate-100">{t('how.4')}</h4>
             <p className="mt-1">
-              กดปุ่ม <strong>ถาม AI</strong> มุมขวาล่าง แล้วพิมพ์ได้เลย เช่น
+              <span dangerouslySetInnerHTML={{ __html: t('how.4body') }} />
             </p>
             <ul className="mt-1 space-y-0.5 text-slate-400">
-              <li>&ldquo;จากบางนาไปรามคำแหง ท่วมไหม&rdquo;</li>
-              <li>&ldquo;น้ำ 40 ซม. ขับผ่านได้ไหม&rdquo;</li>
-              <li>&ldquo;ตอนนี้ท่วมหนักที่ไหน&rdquo;</li>
+              <li>{t('how.4a')}</li>
+              <li>{t('how.4b')}</li>
+              <li>{t('how.4c')}</li>
             </ul>
           </section>
 
           <section className="rounded-xl border border-amber-900/60 bg-amber-950/30 p-3">
             <h4 className="font-semibold text-amber-200">{t('rp.limitsHeading')}</h4>
             <p className="mt-1 text-amber-100/80">
-              แอปนี้ทำโดยบุคคลทั่วไป <strong>ไม่ใช่หน่วยงานราชการ</strong>{' '}
-              และ<strong>ไม่ใช่ช่องทางขอความช่วยเหลือ</strong> ถ้าติดอยู่ในน้ำหรือต้องการ
-              ความช่วยเหลือ โทร <a href="tel:1784" className="underline">1784</a> (ปภ.)
-              หรือ <a href="tel:1555" className="underline">1555</a> ในกรุงเทพฯ
+              <span dangerouslySetInnerHTML={{ __html: t('how.limits1') }} />
             </p>
             <p className="mt-2 text-amber-100/80">
-              ระบบเห็นเฉพาะจุดที่มีผู้แจ้งหรือหน่วยงานรายงาน ไม่ใช่ทุกถนน
-              &ldquo;ไปได้&rdquo; แปลว่ายังไม่มีใครแจ้ง ไม่ใช่การยืนยันว่าถนนแห้ง
-              ตรวจกับภาพกล้องก่อนตัดสินใจเสมอ
+              {t('how.limits2')}
             </p>
             <p className="mt-2 text-amber-100/80">
-              ถ้าเจอน้ำลึกกว่าที่คาดระหว่างทาง ให้กลับรถ อย่าฝืนขับต่อ
+              {t('how.limits3')}
             </p>
           </section>
         </div>

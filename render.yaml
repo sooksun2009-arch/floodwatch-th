@@ -65,6 +65,13 @@ services:
       - key: INGEST_TOKEN
         generateValue: true
 
+      # Longdo Weather: rain radar, short-range forecast and the traffic
+      # cameras that currently have rain on them. Free key from
+      # api.longdo.com/console, product "Longdo Weather", restricted to this
+      # service's domain. Unset leaves every rain feature off.
+      - key: LONGDO_API_KEY
+        sync: false
+
       - key: GEOCODE_ENABLED
         value: "true"
       # Nominatim refuses requests whose User-Agent does not identify a real

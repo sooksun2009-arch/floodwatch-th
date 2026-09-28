@@ -156,6 +156,26 @@ class Settings(BaseSettings):
 
     cors_origins: str = "*"
 
+    # --- Rain radar and forecast (Longdo Weather) ---
+    # Unset leaves every rain feature off and the rest of the app unchanged.
+    # Free key from api.longdo.com/console. Calls are proxied through this app
+    # rather than made from the page, so the key stays on the server.
+    longdo_api_key: str = ""
+    longdo_weather_base_url: str = "https://weather.longdo.com"
+    rain_timeout_sec: float = 10.0
+    # The radar itself refreshes about every ten minutes, so anything shorter
+    # spends quota to receive the same picture.
+    rain_cache_sec: int = 300
+    # Width of the band around a route that counts as "on the way". Wider than
+    # the flood corridor on purpose: a storm two kilometres up the road will be
+    # over it shortly, while a flood two kilometres away will not.
+    rain_corridor_km: float = 4.0
+    # How many points along a route get their own forecast call, and how far
+    # each one looks around itself. Every sample is a request, so this trades
+    # resolution against quota.
+    rain_forecast_samples: int = 3
+    rain_forecast_radius_km: float = 10.0
+
     # Shared secret for POST /api/stations/bma/ingest. The Bangkok drainage
     # site refuses connections from outside Thailand, so the container cannot
     # reach it and a relay that can has to push the readings in instead. Unset

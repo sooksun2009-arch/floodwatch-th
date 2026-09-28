@@ -1,4 +1,6 @@
 """The A-to-B endpoint. This is the feature the app exists for."""
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
@@ -6,9 +8,12 @@ from ..database import get_db
 from ..deps import client_ip, enforce_limit, get_current_user_optional
 from ..geocode import resolve_place
 from ..models import User
+from ..rain import route_rain
 from ..routing import check_route
 from ..schemas import GeocodeOut, LatLng, RouteCheckIn, RouteCheckOut
 from ..services import expire_stale_reports
+
+logger = logging.getLogger("floodwatch")
 
 router = APIRouter(prefix="/api/route", tags=["route"])
 
@@ -65,6 +70,18 @@ async def check(payload: RouteCheckIn, request: Request, db: Session = Depends(g
 
     result["origin_label"] = origin_label or payload.origin_text
     result["destination_label"] = dest_label or payload.destination_text
+
+    # Asked for the route people will actually drive — the first one — not all
+    # of them, because each alternative would multiply the upstream calls for
+    # weather that is nearly the same across a few kilometres.
+    best = (result.get("routes") or [None])[0]
+    if best and best.get("path"):
+        try:
+            result["rain"] = await route_rain(best["path"])
+        except Exception:
+            logger.exception("ดึงข้อมูลฝนบนเส้นทางไม่สำเร็จ")
+            result["rain"] = None
+
     return RouteCheckOut.model_validate(result)
 
 

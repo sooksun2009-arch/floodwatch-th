@@ -325,6 +325,11 @@ class RouteCheckOut(BaseModel):
     degraded: str | None
     corridor_m: int
     routes: list[RouteLegOut]
+    # Weather heading for the route. Deliberately beside the verdict rather
+    # than folded into it: rain is a reason to expect trouble, not evidence
+    # that any particular road is under water, and roads drain at wildly
+    # different rates. None when no key is configured.
+    rain: dict | None = None
 
 
 class GeocodeOut(BaseModel):

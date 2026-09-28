@@ -9,3 +9,6 @@ backend/live_chat_result.txt
 smoke.png
 .deploy-secrets.txt
 mobile-*.png
+
+# ภาพหน้าจอสำหรับโพสต์ — สร้างใหม่ได้ด้วย tools/capture-promo.cjs
+frontend/promo/

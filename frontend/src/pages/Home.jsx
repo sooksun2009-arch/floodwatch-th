@@ -124,6 +124,10 @@ export default function Home() {
   const [destination, setDestination] = useState(null)
   const [picking, setPicking] = useState(null)
   const [mapCenter, setMapCenter] = useState(null)
+  const [radarOn, setRadarOn] = useState(false)
+  // The radar button only appears where there is a radar. Asking the server
+  // beats hardcoding it: the key lives there, not here.
+  const [rainEnabled, setRainEnabled] = useState(false)
 
   const [activeCamera, setActiveCamera] = useState(null)
   const [chatOpen, setChatOpen] = useState(false)
@@ -204,6 +208,10 @@ export default function Home() {
   // Tapping the map still works, and on a desktop with a mouse it is the
   // quickest way. It is not offered as the only way, because on a phone a tap
   // lands on a pin or a route line far more often than on bare map.
+  useEffect(() => {
+    api.rainStatus().then((r) => setRainEnabled(Boolean(r?.enabled))).catch(() => {})
+  }, [])
+
   const onMapClick = useCallback(
     (point) => {
       if (picking) usePoint(point)
@@ -252,6 +260,7 @@ export default function Home() {
               onCameraClick={openCamera}
               onMapClick={onMapClick}
               onCenterChange={setMapCenter}
+              showRadar={radarOn}
               onError={setMapError}
               pickMode={Boolean(picking)}
               fitKey={fitKey}
@@ -307,6 +316,19 @@ export default function Home() {
                 </button>
               </div>
             </>
+          )}
+          {!picking && rainEnabled && (
+            <button
+              onClick={() => setRadarOn((on) => !on)}
+              aria-pressed={radarOn}
+              className={`absolute right-3 top-3 z-10 rounded-xl border px-3 py-2 text-sm backdrop-blur transition-colors ${
+                radarOn
+                  ? 'border-sky-500 bg-sky-950/90 text-sky-200'
+                  : 'border-slate-700 bg-slate-950/85 text-slate-300 hover:bg-slate-900'
+              }`}
+            >
+              🌧️ เรดาร์ฝน
+            </button>
           )}
           {!picking && (
             <button

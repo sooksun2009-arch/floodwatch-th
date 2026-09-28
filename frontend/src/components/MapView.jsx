@@ -223,6 +223,7 @@ export default function MapView({
   onCenterChange,
   onError,
   pickMode = false,
+  showRadar = false,
   fitKey = null,
   className = '',
 }) {
@@ -284,6 +285,28 @@ export default function MapView({
       map.addSource('cameras', { type: 'geojson', data: emptyFC })
       map.addSource('stations', { type: 'geojson', data: emptyFC })
       map.addSource('routes', { type: 'geojson', data: emptyFC })
+
+      // Rain radar, served through our own API so the upstream key stays on
+      // the server. Added once and toggled by visibility rather than added and
+      // removed, so flipping it off and on does not refetch every tile.
+      map.addSource('radar', {
+        type: 'raster',
+        tiles: [`${window.location.origin}/api/rain/radar/{z}/{x}/{y}.png`],
+        tileSize: 256,
+        // Radar covers Thailand only; asking for tiles beyond it wastes quota
+        // to be told there is nothing there.
+        bounds: [97.2, 5.4, 105.7, 20.6],
+        maxzoom: 12,
+      })
+      map.addLayer({
+        id: 'radar-layer',
+        type: 'raster',
+        source: 'radar',
+        layout: { visibility: 'none' },
+        // Rain sits above the basemap but under every pin and route line:
+        // it is context, never the thing being read.
+        paint: { 'raster-opacity': 0.55 },
+      })
 
       // Route lines sit under the pins so markers stay clickable.
       map.addLayer({
@@ -614,6 +637,12 @@ export default function MapView({
     const canvas = map.getCanvas()
     if (canvas) canvas.style.cursor = pickMode ? 'crosshair' : ''
   }, [pickMode])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !readyRef.current || !map.getLayer('radar-layer')) return
+    map.setLayoutProperty('radar-layer', 'visibility', showRadar ? 'visible' : 'none')
+  }, [showRadar])
 
   // Push data into the sources whenever it changes, waiting for style load.
   useEffect(() => {

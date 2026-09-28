@@ -618,6 +618,19 @@ export default function RoutePanel({
                 {result.degraded} — ผลเป็นการประมาณ ควรตรวจกล้องประกอบ
               </p>
             )}
+            {/* Weather, beside the verdict and never folded into it. Heavy
+                rain is a reason to expect trouble on the way, not a claim
+                that any road here is under water — the same separation the
+                canal gauges get, for the same reason. The server stays quiet
+                unless it is heavy enough to change a decision. */}
+            {result.rain?.summary && (
+              <div className="mt-3 rounded-xl border border-indigo-800 bg-indigo-950/40 px-3 py-2 text-sm text-indigo-200">
+                <p className="font-semibold">🌧️ {result.rain.summary}</p>
+                <p className="mt-0.5 text-xs text-indigo-300/80">
+                  ฝนตกไม่ได้แปลว่าถนนท่วม แต่เป็นสัญญาณว่าอาจแย่ลงระหว่างทาง
+                </p>
+              </div>
+            )}
 
             {result.routes.length > 1 && (
               <div className="mt-3 flex flex-wrap gap-2">

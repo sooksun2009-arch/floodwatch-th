@@ -165,6 +165,27 @@ const check = (name, ok, extra = '') => {
   if (!closed) await page.keyboard.press('Escape')
   await new Promise((r) => setTimeout(r, 400))
 
+  // Rain features are off until a key is configured, and the button that
+  // controls them must be absent rather than present and broken.
+  const rain = await page.evaluate(async () => {
+    const status = await fetch('/api/rain/status').then((r) => r.json()).catch(() => null)
+    return {
+      enabled: Boolean(status && status.enabled),
+      button: [...document.querySelectorAll('button')].some((b) =>
+        b.textContent.includes('เรดาร์ฝน'),
+      ),
+      layer: Boolean(window.__fwMap?.getLayer?.('radar-layer')),
+    }
+  })
+  check('ถาม /api/rain/status ได้', rain.enabled !== undefined, JSON.stringify(rain))
+  check(
+    rain.enabled ? 'เปิดเรดาร์ได้ -> มีปุ่มให้กด' : 'ยังไม่ตั้งคีย์ -> ไม่โชว์ปุ่มเรดาร์',
+    rain.button === rain.enabled,
+    JSON.stringify(rain),
+  )
+  check('ชั้นเรดาร์ถูกสร้างไว้รอ (สลับด้วยการซ่อน ไม่ใช่โหลดใหม่)', rain.layer,
+    JSON.stringify(rain))
+
   // Click a flood pin and use the buttons on it. These moved onto the popup
   // because the map is how most people find a pin, and the only way to say
   // "the water has gone" used to be buried in the route results panel.

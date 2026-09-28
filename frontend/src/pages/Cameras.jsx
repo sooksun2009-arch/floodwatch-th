@@ -18,12 +18,15 @@ import { useT } from '../i18n'
  */
 function ElsewhereCameras() {
   const { t } = useT()
-  // Only sites checked to answer. bmatraffic.com was on this list and is
-  // unreachable from outside Thailand -- the same symptom as the Bangkok gauge
-  // site -- and a recommendation nobody verified is worse than a shorter list.
+  // Only sites someone has actually seen working. The Bangkok city cameras
+  // answer 520 from here, the same as every other bangkok.go.th host, but a
+  // user on a Thai connection opened them and sent back a live picture --
+  // which is better evidence than my own, because that is where the readers
+  // are. It carries the caveat rather than being dropped or oversold.
   const sites = [
     ['https://traffic.longdo.com/cameralist', 'cams.out.longdo', 'cams.out.longdoWhy'],
     ['https://traffic.longdo.com/', 'cams.out.longdoMap', 'cams.out.longdoMapWhy'],
+    ['https://cpudapp.bangkok.go.th/bmatraffic/', 'cams.out.bma', 'cams.out.bmaWhy'],
   ]
   return (
     <div className="card mt-4 p-4">

@@ -202,6 +202,36 @@ class Settings(BaseSettings):
     rain_tiles_per_day: int = 2500
     rain_services_per_day: int = 1500
 
+    # --- Satellite flood extent (GISTDA Disaster Platform) ---
+    # Where the water actually was, seen from orbit, as opposed to where
+    # someone reported it or where a canal gauge stands. Unset leaves the whole
+    # layer off and the app unchanged. Key from api-gateway.gistda.or.th; it
+    # travels in an "API-Key" header, and is proxied through this app so the
+    # page never sees it.
+    #
+    # This is an area observation up to a day old, not a statement about any
+    # road. It stays its own map layer with its own caption and is never folded
+    # into a route verdict — the same rule the canal gauges live under.
+    gistda_api_key: str = ""
+    gistda_base_url: str = "https://api-gateway.gistda.or.th/api/2.0/resources"
+    # Which product the map layer draws. 1day is the freshest and the emptiest;
+    # 7days is the useful default during a wet week, because a road that was
+    # under water on Tuesday is worth knowing about on Thursday.
+    gistda_product: str = "7days"
+    gistda_timeout_sec: float = 15.0
+    # Six hours. These products are rebuilt at most daily, so a shorter life
+    # spends quota to receive a byte-identical picture. The radar's ten minutes
+    # is the wrong number here and copying it would have been the easy mistake.
+    gistda_tile_cache_sec: int = 21600
+    # Unpublished quota, so start low and raise it once the real ceiling is
+    # known. Tiles get their own budget for the usual reason: panning must not
+    # be able to starve anything else drawn from this key.
+    gistda_tiles_per_min: int = 20
+    gistda_tiles_per_day: int = 2000
+    # Past this the tiles subdivide without getting sharper — four times the
+    # requests per level for the same picture.
+    gistda_max_zoom: int = 12
+
     # Shared secret for POST /api/stations/bma/ingest. The Bangkok drainage
     # site refuses connections from outside Thailand, so the container cannot
     # reach it and a relay that can has to push the readings in instead. Unset

@@ -156,7 +156,14 @@ with TestClient(app) as c:
     c.post("/api/auth/register", json={"username": "editor", "password": "pass12345"})
     login = c.post("/api/auth/login", json={"username": "editor", "password": "pass12345"})
     auth = {"Authorization": f"Bearer {login.json()['access_token']}"}
-    made = c.post("/api/reports", json=body, headers={**auth, "x-forwarded-for": "1.1.1.4"})
+    # Carries a real uploaded photo: public reports have required one since the
+    # photo gate went in, and posting without it now fails at creation, which
+    # left this check dead rather than failing loudly for several commits.
+    own = c.post("/api/uploads", files={"file": ("f.jpg", a_jpeg(), "image/jpeg")})
+    check("อัปโหลดรูปไว้ใช้กับรายงานที่จะแก้", own.status_code == 201, own.text[:120])
+    made = c.post("/api/reports", json={**body, "photo_url": own.json()["url"]},
+                  headers={**auth, "x-forwarded-for": "1.1.1.4"})
+    check("สร้างรายงานไว้ทดสอบการแก้ไขได้", made.status_code == 201, made.text[:150])
     rid = made.json()["id"]
     r = c.patch(f"/api/reports/{rid}", json={"photo_url": "https://evil.example/p.gif"},
                 headers=auth)

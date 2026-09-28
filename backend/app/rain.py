@@ -25,6 +25,7 @@ from dataclasses import dataclass
 import httpx
 
 from .config import settings
+from .netbudget import Budget, Cache, QuotaExhausted, strip_secret
 
 logger = logging.getLogger("floodwatch.rain")
 
@@ -140,38 +141,13 @@ async def probe_all() -> dict:
 
 # ---------------------------------------------------------------- caching
 
-@dataclass
-class _Entry:
-    at: float
-    value: object
-
-
-_cache: dict[str, _Entry] = {}
-_locks: dict[str, asyncio.Lock] = {}
-_locks_guard = asyncio.Lock()
+# Lives in netbudget now, shared with the satellite flood-extent layer. Kept as
+# a module-level alias so every call site below reads unchanged.
+_cache = Cache()
 
 
 async def _cached(key: str, ttl: float, produce):
-    """One in-flight fetch per key, and one answer shared by everyone waiting.
-
-    Without the per-key lock a burst of route checks during a storm — exactly
-    when this is busiest — would each miss the cache and each spend a call.
-    """
-    now = time.monotonic()
-    hit = _cache.get(key)
-    if hit and now - hit.at < ttl:
-        return hit.value
-
-    async with _locks_guard:
-        lock = _locks.setdefault(key, asyncio.Lock())
-
-    async with lock:
-        hit = _cache.get(key)
-        if hit and time.monotonic() - hit.at < ttl:
-            return hit.value
-        value = await produce()
-        _cache[key] = _Entry(at=time.monotonic(), value=value)
-        return value
+    return await _cache.get(key, ttl, produce)
 
 
 def describe_failure(exc: BaseException) -> str:
@@ -188,56 +164,22 @@ def describe_failure(exc: BaseException) -> str:
         detail = f"HTTP {exc.response.status_code}: {body}"
     else:
         detail = f"{type(exc).__name__}: {exc}"[:220]
-    key = settings.longdo_api_key
-    if key:
-        detail = detail.replace(key, "<คีย์>")
-    return " ".join(detail.split())
+    return " ".join(strip_secret(detail, settings.longdo_api_key).split())
 
 
 # ---------------------------------------------------------------- budget
 
-class _Budget:
-    """A spend limit for outbound calls, per minute and per day.
-
-    Exists because the tile proxy emptied the whole key's allowance and every
-    other rain call started returning 403 — a cache per tile is not a limit,
-    it only stops the *same* tile being fetched twice, and a map being panned
-    asks for different tiles every time.
-
-    Tiles and services keep separate daily budgets so the cheap, high-volume
-    thing cannot starve the one someone is waiting on.
-    """
-
-    def __init__(self, per_min: int, per_day: int):
-        self.per_min = per_min
-        self.per_day = per_day
-        self.minute = 0.0
-        self.minute_used = 0
-        self.day = 0.0
-        self.day_used = 0
-
-    def take(self) -> bool:
-        now = time.time()
-        if now - self.minute >= 60:
-            self.minute, self.minute_used = now, 0
-        if now - self.day >= 86400:
-            self.day, self.day_used = now, 0
-        if self.minute_used >= self.per_min or self.day_used >= self.per_day:
-            return False
-        self.minute_used += 1
-        self.day_used += 1
-        return True
-
-    def state(self) -> dict:
-        return {"per_min": self.per_min, "used_this_min": self.minute_used,
-                "per_day": self.per_day, "used_today": self.day_used}
+# The limiter moved to netbudget when a second metered provider arrived; the
+# reasons it exists are written up there. _Budget stays as a name so the rest of
+# this file and its tests read unchanged.
+_Budget = Budget
 
 
-_tile_budget: _Budget | None = None
-_service_budget: _Budget | None = None
+_tile_budget: Budget | None = None
+_service_budget: Budget | None = None
 
 
-def budgets() -> tuple[_Budget, _Budget]:
+def budgets() -> tuple[Budget, Budget]:
     global _tile_budget, _service_budget
     if _tile_budget is None:
         _tile_budget = _Budget(settings.rain_tiles_per_min, settings.rain_tiles_per_day)
@@ -246,19 +188,10 @@ def budgets() -> tuple[_Budget, _Budget]:
     return _tile_budget, _service_budget
 
 
-class QuotaExhausted(Exception):
-    """Refused here rather than upstream, so the refusal costs nothing and
-    cannot count against the limit that caused it."""
-
-
 def _spend(kind: str) -> None:
     tiles, services = budgets()
     budget = tiles if kind == "tile" else services
-    if not budget.take():
-        raise QuotaExhausted(
-            f"ใช้โควตา{'ไทล์' if kind == 'tile' else 'บริการ'}ครบแล้ว "
-            f"({budget.minute_used}/{budget.per_min} ต่อนาที, "
-            f"{budget.day_used}/{budget.per_day} ต่อวัน)")
+    budget.spend("ไทล์" if kind == "tile" else "บริการ")
 
 
 def _client() -> httpx.AsyncClient:

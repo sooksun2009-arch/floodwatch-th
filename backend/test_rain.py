@@ -140,9 +140,9 @@ def with_upstream(handler, coro):
 
 def reset(key="test-key"):
 
+    # Clears the in-flight locks along with the entries -- they live inside the
+    # cache now, shared with the satellite flood-extent layer.
     rain._cache.clear()
-
-    rain._locks.clear()
 
     calls.clear()
 

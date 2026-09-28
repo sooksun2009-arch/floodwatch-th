@@ -14,8 +14,8 @@ from .database import Base, SessionLocal, engine
 from .migrate import report_drift, sync_schema
 from .models import utcnow
 from .routers import (
-    admin, auth, cameras, chat, imports, misc, rain, reports, route_check,
-    water_stations,
+    admin, auth, cameras, chat, flood_extent, imports, misc, rain, reports,
+    route_check, water_stations,
 )
 from .seed import run_seed
 
@@ -126,7 +126,7 @@ app.add_middleware(
 
 for router in (auth.router, reports.router, cameras.router, route_check.router,
                chat.router, misc.router, admin.router, imports.router,
-               water_stations.router, rain.router):
+               water_stations.router, rain.router, flood_extent.router):
     app.include_router(router)
 
 

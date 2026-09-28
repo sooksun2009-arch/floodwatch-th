@@ -260,27 +260,38 @@ export const parseCoords = (text) => {
  * The oldest band asks for a vote instead of only warning, because the person
  * reading it is usually standing where the answer is.
  */
-export const reportAge = (minutes) => {
+export const reportAge = (minutes, t) => {
   if (minutes == null) return null
-  const ago = timeAgo(minutes)
+  const ago = timeAgo(minutes, t)
+  const text = t ? t('age.reported', { ago }) : `แจ้งเมื่อ ${ago}`
   if (minutes < 45) {
-    return { text: `แจ้งเมื่อ ${ago}`, color: '#34d399', note: null }
+    return { text, color: '#34d399', note: null }
   }
   if (minutes < 150) {
-    return { text: `แจ้งเมื่อ ${ago}`, color: '#fbbf24', note: 'สถานการณ์อาจเปลี่ยนแล้ว' }
+    return {
+      text,
+      color: '#fbbf24',
+      note: t ? t('age.mayHaveChanged') : 'สถานการณ์อาจเปลี่ยนแล้ว',
+    }
   }
   return {
-    text: `แจ้งเมื่อ ${ago}`,
+    text,
     color: '#f87171',
-    note: 'นานแล้ว — ถ้าคุณอยู่แถวนั้น ช่วยกดยืนยันหน่อยครับ',
+    note: t ? t('age.old') : 'นานแล้ว — ถ้าคุณอยู่แถวนั้น ช่วยกดยืนยันหน่อยครับ',
   }
 }
 
-export const timeAgo = (minutes) => {
+// The translator is passed in rather than imported, because this module is
+// plain data and fetch helpers with no React in it, and because every caller
+// already has one. Without it the Thai wording stands, which is the right
+// fallback for a Thai flood map.
+export const timeAgo = (minutes, t) => {
   if (minutes == null) return ''
-  if (minutes < 1) return 'เมื่อสักครู่'
-  if (minutes < 60) return `${minutes} นาทีที่แล้ว`
+  const say = (key, n, thai) => (t ? t(key, { n }) : thai)
+  if (minutes < 1) return say('ago.now', 0, 'เมื่อสักครู่')
+  if (minutes < 60) return say('ago.min', minutes, `${minutes} นาทีที่แล้ว`)
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours} ชม.ที่แล้ว`
-  return `${Math.floor(hours / 24)} วันที่แล้ว`
+  if (hours < 24) return say('ago.hour', hours, `${hours} ชม.ที่แล้ว`)
+  const days = Math.floor(hours / 24)
+  return say('ago.day', days, `${days} วันที่แล้ว`)
 }

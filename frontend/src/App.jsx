@@ -1,6 +1,7 @@
 import { Suspense, lazy, useState } from 'react'
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth'
+import { useT } from './i18n'
 import Home from './pages/Home'
 
 // Admin and stats are rarely opened and pull in extra code; loading them on
@@ -16,8 +17,48 @@ const tabClass = ({ isActive }) =>
   }`
 
 const SHARE = {
-  title: 'FloodWatch TH — เช็คน้ำท่วมก่อนออกรถ',
-  text: 'เช็คว่าเส้นทางที่จะไปมีน้ำท่วมไหม จากรายงานของคนในพื้นที่ เครื่องวัดระดับน้ำ และเรดาร์ฝน',
+  th: {
+    title: 'FloodWatch TH — เช็คน้ำท่วมก่อนออกรถ',
+    text: 'เช็คว่าเส้นทางที่จะไปมีน้ำท่วมไหม จากรายงานของคนในพื้นที่ เครื่องวัดระดับน้ำ และเรดาร์ฝน',
+  },
+  en: {
+    title: 'FloodWatch TH — check Thai roads for flooding before you drive',
+    text: 'See whether your route is flooded, from local reports, water-level gauges and rain radar.',
+  },
+}
+
+/**
+ * Thai and English, side by side rather than behind a menu.
+ *
+ * A visitor who cannot read the interface cannot find a control described in
+ * words they cannot read, so both labels are always on screen and the active
+ * one is simply marked.
+ */
+function LangToggle() {
+  const { lang, setLang, t } = useT()
+  return (
+    <div
+      className="flex shrink-0 overflow-hidden rounded-lg border border-slate-700 text-xs font-semibold"
+      role="group"
+      aria-label={t('lang.label')}
+    >
+      {[['th', 'ไทย'], ['en', 'EN']].map(([code, label]) => (
+        <button
+          key={code}
+          onClick={() => setLang(code)}
+          aria-pressed={lang === code}
+          lang={code}
+          className={`px-2 py-1.5 transition-colors ${
+            lang === code
+              ? 'bg-slate-700 text-white'
+              : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 function ShareButton() {
@@ -27,6 +68,8 @@ function ShareButton() {
   // desktops. Clipboard is the desktop answer and can be refused outright
   // in a non-secure context or by policy, so neither is assumed.
   const [said, setSaid] = useState(null)
+  const { lang, t } = useT()
+  const shareText = SHARE[lang] || SHARE.th
 
   // Always the app's front door, never the page in the address bar: sharing
   // /admin or a half-filled form helps nobody.
@@ -40,7 +83,7 @@ function ShareButton() {
   const share = async () => {
     if (navigator.share) {
       try {
-        await navigator.share({ ...SHARE, url })
+        await navigator.share({ ...shareText, url })
         return
       } catch (error) {
         // Dismissing the sheet is a choice, not a failure.
@@ -48,9 +91,9 @@ function ShareButton() {
       }
     }
     try {
-      await navigator.clipboard.writeText(`${SHARE.title}
+      await navigator.clipboard.writeText(`${shareText.title}
 ${url}`)
-      flash('คัดลอกลิงก์แล้ว')
+      flash(t('share.copied'))
     } catch {
       // Last resort: put it somewhere it can be copied by hand.
       flash(url)
@@ -62,11 +105,11 @@ ${url}`)
       <button
         onClick={share}
         className="flex items-center gap-1.5 rounded-lg border border-slate-700 px-2.5 py-1.5 text-sm text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
-        title="แชร์แอปนี้ให้คนอื่น"
+        title={t('nav.share')}
       >
         <span aria-hidden="true">🔗</span>
-        <span className="hidden sm:inline">แชร์</span>
-        <span className="sr-only">แชร์แอปนี้</span>
+        <span className="hidden sm:inline">{t('nav.share')}</span>
+        <span className="sr-only">{t('nav.share')}</span>
       </button>
       {said && (
         <span
@@ -82,6 +125,7 @@ ${url}`)
 
 function Nav() {
   const { user, logout, isModerator } = useAuth()
+  const { t } = useT()
   return (
     <header className="sticky top-0 z-30 border-b border-slate-800 bg-slate-950/90 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center gap-2 px-3 py-2.5 sm:px-4">
@@ -91,20 +135,21 @@ function Nav() {
         </Link>
         <nav className="flex flex-1 items-center gap-0.5 overflow-x-auto">
           <NavLink to="/" className={tabClass} end>
-            เช็คเส้นทาง
+            {t('nav.route')}
           </NavLink>
           <NavLink to="/cameras" className={tabClass}>
-            กล้อง CCTV
+            {t('nav.cameras')}
           </NavLink>
           <NavLink to="/stats" className={tabClass}>
-            ภาพรวม
+            {t('nav.stats')}
           </NavLink>
           {isModerator && (
             <NavLink to="/admin" className={tabClass}>
-              ผู้ดูแล
+              {t('nav.admin')}
             </NavLink>
           )}
         </nav>
+        <LangToggle />
         <ShareButton />
         {user ? (
           <div className="flex shrink-0 items-center gap-2">
@@ -112,12 +157,12 @@ function Nav() {
               {user.display_name || user.username}
             </span>
             <button onClick={logout} className="text-sm text-slate-400 hover:text-slate-200">
-              ออก
+              {t('nav.logout')}
             </button>
           </div>
         ) : (
           <Link to="/login" className="shrink-0 text-sm text-slate-300 hover:text-white">
-            เข้าสู่ระบบ
+            {t('nav.login')}
           </Link>
         )}
       </div>

@@ -363,7 +363,11 @@ const check = (name, ok, extra = '') => {
       b?.click()
       await wait(700)
     }
-    const boxes = [...document.querySelectorAll('.backdrop-blur')]
+    // Only what floats over the map. Scoped after the first version compared
+    // the page header against the share toast and called it a collision.
+    const surface = document.querySelector('.maplibregl-map')?.parentElement
+      || document.body
+    const boxes = [...surface.querySelectorAll('.backdrop-blur')]
       .map((el) => ({
         label: el.textContent.replace(/\s+/g, ' ').trim().slice(0, 22),
         r: el.getBoundingClientRect(),
@@ -601,6 +605,56 @@ const check = (name, ok, extra = '') => {
   }
 
   await page.screenshot({ path: 'smoke.png' })
+  // ท้ายสุดเสมอ: บล็อกนี้เปลี่ยนภาษาทั้งหน้า ถ้าวางไว้กลางเรื่อง
+  // เทสที่ตามมาจะหาข้อความไทยไม่เจอและแดงยกแผง ซึ่งเกิดขึ้นมาแล้ว
+
+  // Switch to English and check the page actually changed. A key with no
+  // English entry falls back to Thai silently, which is the same failure this
+  // project keeps meeting: the broken state and the working one look alike.
+  const english = await page.evaluate(async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+    const startedLang = document.documentElement.lang
+    const startedThai = startedLang === 'th'
+    const btn = [...document.querySelectorAll('button')]
+      .find((b) => b.textContent.trim() === 'EN')
+    if (!btn) return { missing: true, startedThai, startedLang }
+    btn.click()
+    await wait(900)
+    // A popup opened before the switch keeps the wording it was built with.
+    // Closing them first measures the page, not a stale bubble.
+    document.querySelectorAll('.maplibregl-popup-close-button').forEach((b) => b.click())
+    await wait(400)
+    const text = document.body.innerText
+    const thai = (text.match(/[฀-๿]+/g) || [])
+      .filter((w) => w.length > 2)
+    return {
+      startedThai,
+      startedLang,
+      htmlLang: document.documentElement.lang,
+      hasEnglishVerdictWords: /Check before you drive|Check this route|Water depth/i.test(text),
+      thaiLeft: [...new Set(thai)].slice(0, 12),
+      thaiCount: thai.length,
+    }
+  })
+  check('เปิดมาเป็นภาษาไทยเสมอ แม้เบราว์เซอร์ขอภาษาอังกฤษ',
+        english.startedThai === true,
+        'เริ่มต้นเป็น ' + english.startedLang)
+  check('มีปุ่มสลับเป็นภาษาอังกฤษ', !english.missing)
+  check('กดแล้วหน้าเปลี่ยนเป็นอังกฤษจริง',
+        english.hasEnglishVerdictWords === true, JSON.stringify(english).slice(0, 200))
+  check('ตั้ง lang ของเอกสารเป็น en ด้วย (สำหรับโปรแกรมอ่านหน้าจอ)',
+        english.htmlLang === 'en', english.htmlLang)
+  // Thai that remains is report text and place names, which are deliberately
+  // not translated. A large count means UI strings were missed.
+  check('ไม่มีข้อความ UI ภาษาไทยหลงเหลือเยอะผิดปกติ',
+        english.thaiCount < 12,
+        `เหลือ ${english.thaiCount} ชิ้น เช่น ${(english.thaiLeft || []).join(', ')}`)
+  await page.evaluate(() => {
+    const th = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'ไทย')
+    th?.click()
+  })
+  await new Promise((r) => setTimeout(r, 800))
+
   await browser.close()
 
   console.log('')

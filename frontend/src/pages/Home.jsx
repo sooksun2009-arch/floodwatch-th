@@ -9,19 +9,20 @@ const MapView = lazy(() => import('../components/MapView'))
 import CameraModal from '../components/CameraModal'
 import ChatWidget from '../components/ChatWidget'
 import ReportModal from '../components/ReportModal'
+import { useT } from '../i18n'
 
 function FloodExtentCaption({ product }) {
+  const { t } = useT()
   // Without this the layer is a coloured blob people will read as "these roads
   // are closed". It is neither live nor about roads, and both have to be said
   // where the layer is, not in a page someone has to go and find.
-  const span = { '1day': 'วันที่ผ่านมา', '3days': '3 วันที่ผ่านมา',
-                 '7days': '7 วันที่ผ่านมา', '30days': '30 วันที่ผ่านมา' }[product]
-    || 'ช่วงที่ผ่านมา'
+  const span = t(`span.${product}`) === `span.${product}` ? t('span.default') : t(`span.${product}`)
   return (
     <div className="max-w-[24rem] rounded-xl border border-amber-800/60 bg-amber-950/90 px-3 py-2 text-xs leading-relaxed text-amber-100 backdrop-blur">
-      พื้นที่สีส้มคือบริเวณที่<b>ดาวเทียมเห็นน้ำใน{span}</b> — ไม่ใช่ภาพสด
-      และ<b>ไม่ได้แปลว่าถนนในนั้นผ่านไม่ได้</b> ถนนยกสูงกลางทุ่งที่น้ำท่วมเป็นเรื่องปกติ
-      <span className="mt-1 block text-amber-300/80">ข้อมูล GISTDA · ใช้ประกอบการตัดสินใจ ไม่ใช่คำยืนยัน</span>
+      {/* The <b> tags are part of the translated sentence, so it is inserted as
+          markup. The strings are ours, from i18n.jsx, never from a report. */}
+      <span dangerouslySetInnerHTML={{ __html: t('layer.satellite.caption', { span }) }} />
+      <span className="mt-1 block text-amber-300/80">{t('layer.satellite.credit')}</span>
     </div>
   )
 }
@@ -78,6 +79,7 @@ function RadarCaption() {
 }
 
 function SafetyNotice() {
+  const { t } = useT()
   // Permanent, not dismissible, and outside the map rather than floating over
   // it. Someone opening this during a flood needs to know two things before
   // they trust anything on the screen: nobody official stands behind it, and
@@ -89,18 +91,17 @@ function SafetyNotice() {
   return (
     <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-amber-900/60 bg-amber-950/30 px-3 py-2 text-xs text-amber-100/90">
       <span>
-        แอปนี้ทำโดยบุคคลทั่วไป <strong className="text-amber-200">ไม่ใช่หน่วยงานราชการ</strong>{' '}
-        และไม่ใช่ช่องทางขอความช่วยเหลือ
+        <span dangerouslySetInnerHTML={{ __html: t('safety.body') }} />
       </span>
       <span className="ml-auto flex items-center gap-1.5 whitespace-nowrap">
-        <span className="text-amber-200/70">เหตุด่วน</span>
+        <span className="text-amber-200/70">{t('safety.urgent')}</span>
         <a
           href="tel:1784"
           className="rounded-lg bg-amber-600 px-2 py-0.5 font-semibold text-white hover:bg-amber-500"
         >
-          โทร 1784
+          {t('safety.call')}
         </a>
-        <span className="text-amber-200/70">ปภ. · ในกรุงเทพฯ</span>
+        <span className="text-amber-200/70">{t('safety.bkk')}</span>
         <a href="tel:1555" className="font-semibold text-amber-200 underline">
           1555
         </a>
@@ -110,6 +111,7 @@ function SafetyNotice() {
 }
 
 function Legend({ selected, onToggle, onReset }) {
+  const { t } = useT()
   // On a phone the full key covers a third of the map and sits over marker
   // popups, so it starts collapsed there and expanded on a wider screen.
   const [open, setOpen] = useState(() => {
@@ -125,20 +127,22 @@ function Legend({ selected, onToggle, onReset }) {
       {open ? (
         <div className="rounded-xl border border-slate-700 bg-slate-950/90 p-2.5 text-xs backdrop-blur">
           <div className="mb-1.5 flex items-center justify-between gap-3">
-            <p className="font-semibold text-slate-300">ระดับน้ำ · กดเพื่อดูเฉพาะที่เลือก</p>
+            <p className="font-semibold text-slate-300">{t('legend.title')}</p>
             <button
               onClick={() => setOpen(false)}
               className="rounded px-1 text-sm leading-none text-slate-500 hover:text-slate-200"
-              aria-label="ย่อคำอธิบายสัญลักษณ์"
+              aria-label={t('legend.collapse')}
             >
               −
             </button>
           </div>
           <ul className="space-y-0.5">
             {[
-              ...Object.entries(LEVELS).map(([key, value]) => [key, value.short, value.color]),
-              ['cameras', 'กล้อง CCTV', '#0ea5e9'],
-              ['stations', 'คลองเฝ้าระวัง/วิกฤติ', SITUATIONS[5].color],
+              // Short labels from the dictionary, not from LEVELS: that constant
+              // is Thai, and the legend is the first thing a visitor reads.
+              ...Object.entries(LEVELS).map(([key, value]) => [key, t(`level.${key}.short`), value.color]),
+              ['cameras', t('legend.cameras'), '#0ea5e9'],
+              ['stations', t('legend.gauges'), SITUATIONS[5].color],
             ].map(([key, label, color]) => {
               const picking = selected.size > 0
               const on = !picking || selected.has(key)
@@ -170,7 +174,7 @@ function Legend({ selected, onToggle, onReset }) {
               onClick={onReset}
               className="mt-1.5 w-full rounded px-1 py-0.5 text-left text-[11px] text-sky-400 hover:bg-slate-800"
             >
-              แสดงเฉพาะ {selected.size} ชนิด · กดเพื่อแสดงทั้งหมด
+              {t('legend.filtering')} {selected.size} · {t('legend.showAll')}
             </button>
           )}
         </div>
@@ -189,7 +193,7 @@ function Legend({ selected, onToggle, onReset }) {
               />
             ))}
           </span>
-          สัญลักษณ์
+          {t('legend.chip')}
         </button>
       )}
     </div>
@@ -208,6 +212,7 @@ export default function Home() {
   const [destination, setDestination] = useState(null)
   const [picking, setPicking] = useState(null)
   const [mapCenter, setMapCenter] = useState(null)
+  const { t } = useT()
   const [radarOn, setRadarOn] = useState(false)
   const [floodLayerOn, setFloodLayerOn] = useState(false)
   // Categories picked in the legend. Empty means no choice made, which shows
@@ -251,7 +256,7 @@ export default function Home() {
       setStations(stationData || [])
       setLoadError(null)
     } catch {
-      setLoadError('โหลดข้อมูลแผนที่ไม่สำเร็จ — ตรวจการเชื่อมต่อแล้วลองใหม่')
+      setLoadError(t('map.loadFailed'))
     }
   }, [])
 
@@ -322,7 +327,9 @@ export default function Home() {
     [picking, usePoint],
   )
 
-  const PICK_LABEL = { origin: 'ต้นทาง', destination: 'ปลายทาง', report: 'จุดที่น้ำท่วม' }
+  const PICK_LABEL = {
+    origin: t('route.from'), destination: t('route.to'), report: t('report.where'),
+  }
 
   const showRouteOnMap = useCallback((route) => {
     setResult(route)
@@ -348,7 +355,7 @@ export default function Home() {
           <Suspense
             fallback={
               <div className="flex h-full items-center justify-center text-sm text-slate-500">
-                กำลังโหลดแผนที่…
+                {t('map.loading')}
               </div>
             }
           >
@@ -402,7 +409,7 @@ export default function Home() {
                 </svg>
               </div>
               <div className="absolute left-1/2 top-3 z-10 w-[min(92%,26rem)] -translate-x-1/2 rounded-xl border border-sky-700 bg-sky-950/95 px-3 py-2 text-center text-sm text-sky-100 backdrop-blur">
-                เลื่อนแผนที่ให้หมุดอยู่ตรง{PICK_LABEL[picking]}
+                {t('pick.instruction', { what: PICK_LABEL[picking] })}
                 {mapCenter && (
                   <span className="mt-0.5 block text-xs text-sky-300/80">
                     {mapCenter.lat.toFixed(5)}, {mapCenter.lng.toFixed(5)}
@@ -414,14 +421,14 @@ export default function Home() {
                   onClick={() => setPicking(null)}
                   className="rounded-xl border border-slate-600 bg-slate-900/95 px-4 py-3 text-sm text-slate-300 backdrop-blur hover:bg-slate-800"
                 >
-                  ยกเลิก
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={() => usePoint(mapCenter)}
                   disabled={!mapCenter}
                   className="flex-1 rounded-xl bg-sky-600 py-3 text-sm font-semibold text-white shadow-lg hover:bg-sky-500 disabled:opacity-50"
                 >
-                  ยืนยันตำแหน่งนี้
+                  {t('pick.confirm')}
                 </button>
               </div>
             </>
@@ -444,7 +451,7 @@ export default function Home() {
                         : 'border-slate-700 bg-slate-950/85 text-slate-300 hover:bg-slate-900'
                     }`}
                   >
-                    🌧️ เรดาร์ฝน
+                    🌧️ {t('layer.radar')}
                   </button>
                 )}
                 {floodLayer && (
@@ -457,7 +464,7 @@ export default function Home() {
                         : 'border-slate-700 bg-slate-950/85 text-slate-300 hover:bg-slate-900'
                     }`}
                   >
-                    🛰️ น้ำท่วมจากดาวเทียม
+                    🛰️ {t('layer.satellite')}
                   </button>
                 )}
               </div>
@@ -478,7 +485,7 @@ export default function Home() {
               // is fixed to the viewport. On a phone the map ends well above it.
               className="absolute bottom-3 right-3 z-10 rounded-full bg-orange-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-orange-950/50 hover:bg-orange-500 lg:bottom-24"
             >
-              แจ้งน้ำท่วม
+              {t('report.button')}
             </button>
           )}
         </div>
@@ -515,9 +522,9 @@ export default function Home() {
             ask about commissioning work should not have to open "sources and
             limitations" to find out a person made this. */}
         <p className="mt-4 px-1 text-xs text-slate-500">
-          พัฒนาโดย <span className="font-semibold text-slate-300">Sooksun</span>
+          {t('byline.by')} <span className="font-semibold text-slate-300">Sooksun</span>
           {' · '}
-          รับเขียนเว็บและระบบภายในองค์กร{' '}
+          {t('byline.hire')}{' '}
           <a
             className="font-medium text-sky-400 underline decoration-sky-700 underline-offset-2 hover:text-sky-300"
             href="mailto:sooksun2009@gmail.com?subject=สนใจจ้างเขียนระบบ (จาก FloodWatch TH)"
@@ -528,7 +535,7 @@ export default function Home() {
 
         <details className="card mt-4 p-4 text-xs leading-relaxed text-slate-400">
           <summary className="cursor-pointer font-semibold text-slate-300">
-            แหล่งข้อมูล ข้อจำกัด และความเป็นส่วนตัว
+            {t('route.disclosure')}
           </summary>
 
           <p className="mt-3 font-semibold text-slate-300">ข้อจำกัดที่ต้องรู้</p>

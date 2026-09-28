@@ -1,8 +1,59 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api, levelLabel } from '../api'
 import CameraModal from '../components/CameraModal'
+import { useT } from '../i18n'
+
+
+/**
+ * Where to watch a road when this app has no camera on it.
+ *
+ * Carrying the feeds ourselves means permission from each agency, and that is
+ * not done. Sending people to sites that already have them is worth more than
+ * an empty list that says "no cameras match", because the question they came
+ * with -- what does that road look like right now -- has an answer, just not
+ * one we host.
+ *
+ * Labelled as somebody else's site, because a link that quietly leaves is how
+ * an app spends the trust it needs for the flood reports.
+ */
+function ElsewhereCameras() {
+  const { t } = useT()
+  // Only sites checked to answer. bmatraffic.com was on this list and is
+  // unreachable from outside Thailand -- the same symptom as the Bangkok gauge
+  // site -- and a recommendation nobody verified is worse than a shorter list.
+  const sites = [
+    ['https://traffic.longdo.com/cameralist', 'cams.out.longdo', 'cams.out.longdoWhy'],
+    ['https://traffic.longdo.com/', 'cams.out.longdoMap', 'cams.out.longdoMapWhy'],
+  ]
+  return (
+    <div className="card mt-4 p-4">
+      <p className="font-semibold text-slate-200">{t('cams.none.title')}</p>
+      <p className="mt-1 text-sm leading-relaxed text-slate-400">{t('cams.none.body')}</p>
+      <ul className="mt-4 space-y-2">
+        {sites.map(([href, title, why]) => (
+          <li key={href}>
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block rounded-xl border border-slate-700 p-3 transition-colors hover:border-sky-600 hover:bg-slate-900"
+            >
+              <span className="flex items-center justify-between gap-3">
+                <span className="font-medium text-sky-300">{t(title)}</span>
+                <span className="shrink-0 text-xs text-slate-500">{t('cams.out.open')} ↗</span>
+              </span>
+              <span className="mt-1 block text-xs leading-relaxed text-slate-400">{t(why)}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 text-xs text-slate-500">{t('cams.out.note')}</p>
+    </div>
+  )
+}
 
 export default function Cameras() {
+  const { t } = useT()
   const [cameras, setCameras] = useState([])
   const [provinces, setProvinces] = useState([])
   const [search, setSearch] = useState('')
@@ -73,9 +124,9 @@ export default function Cameras() {
 
   return (
     <div className="mx-auto max-w-7xl p-3 sm:p-4">
-      <h1 className="mb-1 text-xl font-bold">กล้อง CCTV</h1>
+      <h1 className="mb-1 text-xl font-bold">{t('cams.title')}</h1>
       <p className="mb-4 text-sm text-slate-400">
-        ดูภาพจริงด้วยตาตัวเองก่อนตัดสินใจ — วิธีที่เชื่อถือได้ที่สุด
+        {t('cams.sub')}
       </p>
 
       <div className="card mb-4 flex flex-wrap gap-2 p-3">
@@ -114,7 +165,14 @@ export default function Cameras() {
       {loading ? (
         <p className="py-10 text-center text-slate-400">กำลังโหลด…</p>
       ) : cameras.length === 0 ? (
-        <p className="py-10 text-center text-slate-400">ไม่พบกล้องที่ตรงกับเงื่อนไข</p>
+        // Two different emptinesses, and they need different answers: a search
+        // that matched nothing is the visitor's to fix, an app with no cameras
+        // at all is ours, and only the second should send them elsewhere.
+        search || provinceId || nearMe ? (
+          <p className="py-10 text-center text-slate-400">{t('cams.none.filtered')}</p>
+        ) : (
+          <ElsewhereCameras />
+        )
       ) : (
         <div className="space-y-6">
           {grouped.map(([province, list]) => (

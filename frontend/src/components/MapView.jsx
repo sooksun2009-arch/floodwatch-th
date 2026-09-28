@@ -22,11 +22,12 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import {
   LEVELS, SITUATIONS, api, levelLabel, reportAge, safePhotoUrl, timeAgo,
 } from '../api'
+import { depthText, useT } from '../i18n'
 
 // Raster OpenStreetMap tiles need no API key, which keeps the app free to run.
 // For production traffic, point VITE_MAP_STYLE at a tile provider you have an
 // agreement with — the OSM community tile servers are not for heavy use.
-const OSM_STYLE = {
+const osmStyle = (t) => ({
   version: 8,
   sources: {
     osm: {
@@ -34,7 +35,7 @@ const OSM_STYLE = {
       tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
       tileSize: 256,
       maxzoom: 19,
-      attribution: '© ผู้ร่วมสร้าง OpenStreetMap',
+      attribution: t('map.attribution'),
     },
   },
   layers: [
@@ -47,7 +48,7 @@ const OSM_STYLE = {
       paint: { 'raster-brightness-max': 0.82, 'raster-saturation': -0.35, 'raster-contrast': 0.05 },
     },
   ],
-}
+})
 
 const STYLE_URL = import.meta.env.VITE_MAP_STYLE || null
 
@@ -60,7 +61,7 @@ const VERDICT_COLOR = {
 
 const emptyFC = { type: 'FeatureCollection', features: [] }
 
-const reportsToGeoJSON = (reports) => ({
+const reportsToGeoJSON = (reports, t) => ({
   type: 'FeatureCollection',
   features: (reports || []).map((r) => ({
     type: 'Feature',
@@ -68,12 +69,17 @@ const reportsToGeoJSON = (reports) => ({
     properties: {
       id: r.id,
       level: r.level,
-      place: r.place || r.district || r.province_name || 'ไม่ระบุจุด',
-      label: r.level_label || levelLabel(r.level),
+      place: r.place || r.district || r.province_name || t('popup.unknownPlace'),
+      // Our own translation of the level code, not the Thai label the API
+      // sends alongside it: the code is the fact, the label is one rendering
+      // of it, and an English reader needs the other one.
+      label: t(`level.${r.level}`) === `level.${r.level}`
+        ? (r.level_label || levelLabel(r.level))
+        : t(`level.${r.level}`),
       depth: r.depth_cm ?? '',
       confirms: r.confirm_count ?? 0,
       disputes: r.dispute_count ?? 0,
-      age: timeAgo(r.age_minutes),
+      age: timeAgo(r.age_minutes, t),
       ageMinutes: r.age_minutes ?? '',
       source: r.source,
       photo: r.photo_url || '',
@@ -233,6 +239,15 @@ export default function MapView({
   fitKey = null,
   className = '',
 }) {
+  const { t, lang } = useT()
+  // Held in a ref because the popup builders live inside an effect that runs
+  // once. A captured t would go on speaking whichever language the map was
+  // created in, long after the reader switched.
+  const tRef = useRef(t)
+  tRef.current = t
+  const langRef = useRef(lang)
+  langRef.current = lang
+
   const containerRef = useRef(null)
   const mapRef = useRef(null)
   const readyRef = useRef(false)
@@ -254,7 +269,9 @@ export default function MapView({
 
     const map = new MapLibreMap({
       container: containerRef.current,
-      style: STYLE_URL || OSM_STYLE,
+      // A function, not a constant: the credit line is translated, and the
+      // translator only exists inside the component.
+      style: STYLE_URL || osmStyle(t),
       center: [100.5018, 13.7563],
       zoom: 10,
       attributionControl: { compact: true },
@@ -276,7 +293,7 @@ export default function MapView({
 
     map.on('error', (event) => {
       if (OPTIONAL_SOURCES.has(event?.sourceId)) return
-      const message = event?.error?.message || 'แผนที่ทำงานผิดพลาด'
+      const message = event?.error?.message || tRef.current('map.error')
       // Matched on the message as well, because a source id does not always
       // survive: the radar's 503 arrived as "AJAXError: (503): <url>", which
       // the old filter — tile|fetch|abort|network — let straight through onto
@@ -460,7 +477,8 @@ export default function MapView({
         // Without this the failure is invisible: the exception escapes the
         // listener, the remaining layers are never added, and the map just
         // sits there empty.
-        handlersRef.current.onError?.(`สร้างชั้นข้อมูลบนแผนที่ไม่สำเร็จ: ${err.message}`)
+        handlersRef.current.onError?.(
+          tRef.current('map.layerFailed', { message: err.message }))
       }
     })
 
@@ -491,15 +509,19 @@ export default function MapView({
       // changes within the hour, how old the report is decides whether the
       // level above it still means anything — a reader put it better than I
       // would: knowing when it came in is what makes them willing to drive.
-      const age = props.ageMinutes === '' ? null : reportAge(Number(props.ageMinutes))
+      const age = props.ageMinutes === '' ? null : reportAge(Number(props.ageMinutes), tRef.current)
       if (age) {
         line(age.text, `color:${age.color};font-weight:600;margin-top:.1rem`)
         if (age.note) line(age.note, `color:${age.color};opacity:.85;font-size:12px`)
       }
 
-      if (props.depth) line(`วัดได้ ${props.depth} ซม.`, 'color:#94a3b8')
+      if (props.depth) {
+        line(tRef.current('popup.measured',
+          { depth: depthText(props.depth, langRef.current) }), 'color:#94a3b8')
+      }
       const counts = document.createElement('div')
-      counts.textContent = `ยืนยัน ${props.confirms} · แย้ง ${props.disputes}`
+      counts.textContent = tRef.current('popup.tally',
+        { confirms: props.confirms, disputes: props.disputes })
       counts.style.cssText = 'color:#94a3b8'
       root.appendChild(counts)
 
@@ -509,7 +531,7 @@ export default function MapView({
       if (photo) {
         const image = document.createElement('img')
         image.src = photo
-        image.alt = 'ภาพจุดน้ำท่วม'
+        image.alt = tRef.current('popup.photoAlt')
         image.loading = 'lazy'
         // Cap the height. A portrait photo — which is most phone photos —
         // renders at full aspect ratio otherwise, and the popup grows until
@@ -518,7 +540,7 @@ export default function MapView({
         image.style.cssText =
           'margin-top:.5rem;border-radius:.5rem;width:100%;max-height:160px;' +
           'object-fit:cover;cursor:zoom-in'
-        image.title = 'แตะเพื่อเปิดรูปเต็ม'
+        image.title = tRef.current('popup.photoTitle')
         image.addEventListener('click', () => window.open(photo, '_blank', 'noopener'))
         root.appendChild(image)
       }
@@ -544,19 +566,22 @@ export default function MapView({
           .then((updated) => {
             votedReportsRef.current.add(props.id)
             counts.textContent =
-              `ยืนยัน ${updated.confirm_count} · แย้ง ${updated.dispute_count}`
+              tRef.current('popup.tally', { confirms: updated.confirm_count,
+                                           disputes: updated.dispute_count })
             said.textContent = choice === 'dispute'
-              ? 'ขอบคุณครับ — จะตรวจสอบให้'
-              : 'ขอบคุณครับ'
+              ? tRef.current('popup.thanksChecking')
+              : tRef.current('popup.thanks')
           })
           .catch((error) => {
             for (const node of actions.querySelectorAll('button')) node.disabled = false
             said.style.color = '#f59e0b'
-            said.textContent = error?.message || 'ส่งไม่สำเร็จ ลองใหม่อีกครั้ง'
+            said.textContent = error?.message || tRef.current('popup.sendFailed')
           })
       }
 
-      for (const [text, choice] of [['ยังท่วมอยู่', 'confirm'], ['น้ำลดแล้ว', 'dispute']]) {
+      for (const [key, choice] of [['report.stillFlooded', 'confirm'],
+                                   ['report.subsided', 'dispute']]) {
+        const text = tRef.current(key)
         const button = document.createElement('button')
         button.type = 'button'
         button.textContent = text
@@ -568,7 +593,7 @@ export default function MapView({
 
       if (votedReportsRef.current.has(props.id)) {
         for (const node of actions.querySelectorAll('button')) node.disabled = true
-        said.textContent = 'ขอบคุณครับ'
+        said.textContent = tRef.current('popup.thanks')
       }
       root.appendChild(actions)
 
@@ -594,21 +619,24 @@ export default function MapView({
         const over = Number(props.diff)
         line(
           over > 0
-            ? `สูงกว่าตลิ่ง ${over.toFixed(2)} ม.`
-            : `ต่ำกว่าตลิ่ง ${Math.abs(over).toFixed(2)} ม.`,
+            ? tRef.current('popup.aboveBank', { m: over.toFixed(2) })
+            : tRef.current('popup.belowBank', { m: Math.abs(over).toFixed(2) }),
           'color:#94a3b8',
         )
       }
       line(props.area, 'color:#94a3b8')
-      line(props.agency ? `ข้อมูลโดย ${props.agency}` : '', 'color:#64748b;margin-top:.25rem')
-      if (props.stale === 1) line('ข้อมูลไม่อัปเดต', 'color:#f59e0b;margin-top:.25rem')
+      line(props.agency ? tRef.current('popup.agency', { agency: props.agency }) : '',
+           'color:#64748b;margin-top:.25rem')
+      if (props.stale === 1) {
+        line(tRef.current('popup.stale'), 'color:#f59e0b;margin-top:.25rem')
+      }
 
       // A level on its own does not say whether to turn around — the same
       // number means opposite things depending on which way it is going. The
       // history is a separate request, so the popup opens now and fills in.
       const slot = document.createElement('div')
       slot.style.cssText = 'margin-top:.4rem;color:#64748b'
-      slot.textContent = 'กำลังดูแนวโน้ม…'
+      slot.textContent = tRef.current('popup.trendLoading')
       root.appendChild(slot)
 
       const token = Symbol('station-history')
@@ -620,7 +648,7 @@ export default function MapView({
           if (historyTokenRef.current !== token || !slot.isConnected) return
           slot.textContent = ''
           if (!data.available) {
-            slot.textContent = data.reason || 'ไม่มีข้อมูลย้อนหลัง'
+            slot.textContent = data.reason || tRef.current('popup.trendNone')
             return
           }
           const chart = sparkline(data.points, data.trend?.direction)
@@ -635,7 +663,7 @@ export default function MapView({
         })
         .catch(() => {
           if (historyTokenRef.current !== token || !slot.isConnected) return
-          slot.textContent = 'ดูแนวโน้มไม่สำเร็จ'
+          slot.textContent = tRef.current('popup.trendFailed')
         })
 
       popup.setLngLat(event.lngLat).setDOMContent(root).addTo(map)
@@ -733,7 +761,7 @@ export default function MapView({
     if (!map) return undefined
 
     const apply = () => {
-      map.getSource('reports')?.setData(reportsToGeoJSON(reports))
+      map.getSource('reports')?.setData(reportsToGeoJSON(reports, tRef.current))
       map.getSource('cameras')?.setData(camerasToGeoJSON(cameras))
       map.getSource('stations')?.setData(stationsToGeoJSON(stations))
       map.getSource('routes')?.setData(routesToGeoJSON(routes))
@@ -746,7 +774,10 @@ export default function MapView({
     // The style is still loading; the sources do not exist yet.
     map.once('load', apply)
     return () => map.off('load', apply)
-  }, [reports, cameras, stations, routes])
+    // lang is in here so switching language rebuilds the pin data. Without
+    // it the wording baked into each feature stays in whichever language the
+    // reader started in, and only new reports would come through translated.
+  }, [reports, cameras, stations, routes, lang])
 
   // Origin / destination pins.
   useEffect(() => {

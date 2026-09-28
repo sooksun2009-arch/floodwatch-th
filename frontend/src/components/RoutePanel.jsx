@@ -3,14 +3,16 @@ import {
   api, ApiError, LEVELS, SITUATIONS, VERDICTS, levelLabel, reportAge, safePhotoUrl,
   timeAgo,
 } from '../api'
+import { depthText, useT } from '../i18n'
 
 // One endpoint input: type a name, use GPS, or drop a pin on the map.
 function EndpointInput({ id, label, badge, value, point, onChange, onPick, picking, onUseGps }) {
+  const { t, lang } = useT()
   const [gpsBusy, setGpsBusy] = useState(false)
 
   const useGps = () => {
     if (!navigator.geolocation) {
-      onUseGps(null, 'เบราว์เซอร์นี้ไม่รองรับการระบุตำแหน่ง')
+      onUseGps(null, t('rp.gpsUnsupported'))
       return
     }
     setGpsBusy(true)
@@ -23,8 +25,8 @@ function EndpointInput({ id, label, badge, value, point, onChange, onPick, picki
         setGpsBusy(false)
         const reason =
           error.code === error.PERMISSION_DENIED
-            ? 'คุณปฏิเสธการเข้าถึงตำแหน่ง เปิดสิทธิ์ในเบราว์เซอร์แล้วลองใหม่'
-            : 'ระบุตำแหน่งไม่สำเร็จ ลองพิมพ์ชื่อสถานที่แทน'
+            ? t('rp.gpsDenied')
+            : t('rp.gpsFailed')
         onUseGps(null, reason)
       },
       { enableHighAccuracy: true, timeout: 10000 },
@@ -47,7 +49,7 @@ function EndpointInput({ id, label, badge, value, point, onChange, onPick, picki
           id={id}
           className="field"
           value={value}
-          placeholder={badge === 'A' ? 'เช่น บางนา, ถนนรามคำแหง' : 'เช่น ลาดพร้าว, จตุจักร'}
+          placeholder={badge === 'A' ? t('route.fromPlaceholder') : t('route.toPlaceholder')}
           onChange={(event) => onChange(event.target.value)}
           autoComplete="off"
         />
@@ -56,7 +58,7 @@ function EndpointInput({ id, label, badge, value, point, onChange, onPick, picki
           onClick={useGps}
           disabled={gpsBusy}
           className="btn-ghost shrink-0 px-3 text-sm"
-          title="ใช้ตำแหน่งปัจจุบันของฉัน"
+          title={t('rp.useGps')}
         >
           {gpsBusy ? '…' : '📍'}
         </button>
@@ -68,14 +70,14 @@ function EndpointInput({ id, label, badge, value, point, onChange, onPick, picki
               ? 'border-sky-500 bg-sky-500/20 text-sky-200'
               : 'border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800'
           }`}
-          title="ปักหมุดบนแผนที่"
+          title={t('rp.pinOnMap')}
         >
-          {picking ? 'แตะแผนที่' : '🗺'}
+          {picking ? t('rp.tapMap') : '🗺'}
         </button>
       </div>
       {point && (
         <p className="mt-1 text-xs text-slate-500">
-          พิกัด {point.lat.toFixed(5)}, {point.lng.toFixed(5)}
+          {t('rp.coords')} {point.lat.toFixed(5)}, {point.lng.toFixed(5)}
         </p>
       )}
     </div>
@@ -83,6 +85,7 @@ function EndpointInput({ id, label, badge, value, point, onChange, onPick, picki
 }
 
 function HowTo({ onClose }) {
+  const { t, lang } = useT()
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 sm:items-center sm:p-4"
@@ -94,14 +97,14 @@ function HowTo({ onClose }) {
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label="วิธีใช้งาน"
+        aria-label={t('route.how')}
       >
         <div className="flex items-center justify-between border-b border-slate-800 p-4">
-          <h3 className="text-base font-bold">วิธีการใช้งาน</h3>
+          <h3 className="text-base font-bold">{t('route.how')}</h3>
           <button
             onClick={onClose}
             className="rounded-lg px-2 py-1 text-2xl leading-none text-slate-400 hover:bg-slate-800"
-            aria-label="ปิด"
+            aria-label={t('rp.close')}
           >
             ×
           </button>
@@ -168,7 +171,7 @@ function HowTo({ onClose }) {
           </section>
 
           <section className="rounded-xl border border-amber-900/60 bg-amber-950/30 p-3">
-            <h4 className="font-semibold text-amber-200">ข้อจำกัดที่ต้องรู้</h4>
+            <h4 className="font-semibold text-amber-200">{t('rp.limitsHeading')}</h4>
             <p className="mt-1 text-amber-100/80">
               แอปนี้ทำโดยบุคคลทั่วไป <strong>ไม่ใช่หน่วยงานราชการ</strong>{' '}
               และ<strong>ไม่ใช่ช่องทางขอความช่วยเหลือ</strong> ถ้าติดอยู่ในน้ำหรือต้องการ
@@ -188,7 +191,7 @@ function HowTo({ onClose }) {
 
         <div className="sticky bottom-0 border-t border-slate-800 bg-slate-900/95 p-4 backdrop-blur">
           <button onClick={onClose} className="btn-primary w-full">
-            เข้าใจแล้ว
+            {t('rp.understood')}
           </button>
         </div>
       </div>
@@ -197,12 +200,13 @@ function HowTo({ onClose }) {
 }
 
 function CameraStrip({ cameras, onOpen }) {
+  const { t, lang } = useT()
   if (!cameras?.length) {
     return (
       <div className="card p-4">
-        <h3 className="mb-1 text-sm font-bold text-slate-200">1. กล้อง CCTV ตามเส้นทาง</h3>
+        <h3 className="mb-1 text-sm font-bold text-slate-200">{t('rp.camerasHeading')}</h3>
         <p className="text-sm text-slate-400">
-          ยังไม่มีกล้องในระบบ — ระบบจะแสดงเฉพาะกล้องจริงของหน่วยงานเท่านั้น
+          {t('rp.camerasNone')}
           ผู้ดูแลเพิ่มได้ที่หน้าผู้ดูแล → จัดการกล้อง
         </p>
       </div>
@@ -212,9 +216,9 @@ function CameraStrip({ cameras, onOpen }) {
     <div>
       <div className="mb-2 flex items-baseline justify-between">
         <h3 className="text-sm font-bold text-slate-200">
-          1. ดูด้วยตาตัวเอง — กล้องตามเส้นทาง ({cameras.length})
+          {t('rp.camerasStep')} ({cameras.length})
         </h3>
-        <span className="text-xs text-slate-500">เรียงตามระยะทาง</span>
+        <span className="text-xs text-slate-500">{t('rp.sortedByDistance')}</span>
       </div>
       <div className="-mx-1 flex snap-x gap-2 overflow-x-auto px-1 pb-2">
         {cameras.map(({ camera, along_km, distance_from_route_m }) => (
@@ -225,21 +229,21 @@ function CameraStrip({ cameras, onOpen }) {
           >
             <div className="mb-1 flex items-center gap-1.5">
               <span className="text-base">📹</span>
-              <span className="text-xs font-semibold text-sky-400">กม. {along_km.toFixed(1)}</span>
+              <span className="text-xs font-semibold text-sky-400">{t('rp.kmMark')} {along_km.toFixed(1)}</span>
             </div>
             <p className="line-clamp-2 text-sm font-medium leading-snug text-slate-100">
               {camera.name}
             </p>
-            <p className="mt-1 text-xs text-slate-500">ห่างเส้นทาง {distance_from_route_m} ม.</p>
-            {camera.is_demo && <p className="mt-1 text-xs text-amber-400">สตรีมตัวอย่าง</p>}
+            <p className="mt-1 text-xs text-slate-500">{t('rp.offRoute')} {distance_from_route_m} {t('route.m')}</p>
+            {camera.is_demo && <p className="mt-1 text-xs text-amber-400">{t('rp.demoStream')}</p>}
             {camera.frame_age_minutes > 90 && (
               <p className="mt-1 text-xs text-amber-400">
-                ภาพค้าง {timeAgo(camera.frame_age_minutes)}
+                {t('rp.frozenFrame')} {timeAgo(camera.frame_age_minutes, t)}
               </p>
             )}
             {camera.nearby_flood_level && (
               <p className="mt-1 text-xs text-red-400">
-                ใกล้จุด{LEVELS[camera.nearby_flood_level]?.short || ''}
+                {t('rp.nearFlood')} {t(`level.${camera.nearby_flood_level}.short`)}
               </p>
             )}
           </button>
@@ -250,18 +254,19 @@ function CameraStrip({ cameras, onOpen }) {
 }
 
 function StationList({ stations }) {
+  const { t, lang } = useT()
   if (!stations?.length) return null
   return (
     <div>
       <h3 className="mb-2 text-sm font-bold text-slate-200">
-        3. คลองใกล้เส้นทางที่ล้นตลิ่ง ({stations.length})
+        {t('rp.gaugesStep')} ({stations.length})
       </h3>
       <ul className="space-y-2">
         {stations.map(({ station, along_km, distance_from_route_m }) => (
           <li key={station.id} className="card p-3">
             <div className="flex items-start gap-3">
               <div className="flex w-14 shrink-0 flex-col items-center">
-                <span className="text-xs font-bold text-slate-400">กม.</span>
+                <span className="text-xs font-bold text-slate-400">{t('rp.kmMark')}</span>
                 <span
                   className="text-lg font-bold leading-none"
                   style={{ color: SITUATIONS[station.situation_level]?.color || '#dc2626' }}
@@ -275,12 +280,12 @@ function StationList({ stations }) {
                   className="mt-0.5 text-sm font-medium"
                   style={{ color: SITUATIONS[station.situation_level]?.color || '#dc2626' }}
                 >
-                  สูงกว่าตลิ่ง {Number(station.diff_from_bank ?? 0).toFixed(2)} ม.
+                  {Number(station.diff_from_bank ?? 0).toFixed(2)} {t('route.m')} {t('rp.aboveBankShort')}
                 </p>
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-                  <span>ห่างเส้นทาง {distance_from_route_m} ม.</span>
-                  {station.agency && <span>ข้อมูลโดย {station.agency}</span>}
-                  {station.is_stale && <span className="text-amber-400">ข้อมูลไม่อัปเดต</span>}
+                  <span>{distance_from_route_m} {t('route.m')} {t('rp.offRoute')}</span>
+                  {station.agency && <span>{t('rp.agencyShort')} {station.agency}</span>}
+                  {station.is_stale && <span className="text-amber-400">{t('rp.staleShort')}</span>}
                 </div>
               </div>
             </div>
@@ -296,14 +301,15 @@ function StationList({ stations }) {
 }
 
 function ObstacleList({ obstacles, onVote, votedIds }) {
+  const { t, lang } = useT()
   if (!obstacles?.length) {
     return (
       <div className="card border-emerald-800/50 bg-emerald-950/30 p-4">
         <p className="text-sm text-emerald-200">
-          ไม่มีรายงานน้ำท่วมบนเส้นทางนี้
+          {t('rp.noReports')}
         </p>
         <p className="mt-1 text-xs text-emerald-300/70">
-          หมายถึงยังไม่มีใครแจ้ง ไม่ใช่การยืนยันว่าถนนแห้ง — ถ้าคุณขับผ่านแล้วเจอน้ำ ช่วยกดแจ้งด้วยครับ
+          {t('rp.noReportsCaveat')}
         </p>
       </div>
     )
@@ -312,7 +318,7 @@ function ObstacleList({ obstacles, onVote, votedIds }) {
   return (
     <div>
       <h3 className="mb-2 text-sm font-bold text-slate-200">
-        2. รายงานจากผู้ใช้บนเส้นทาง ({obstacles.length})
+        {t('rp.reportsStep')} ({obstacles.length})
       </h3>
       <ul className="space-y-2">
         {obstacles.map(({ report, along_km, distance_from_route_m }) => {
@@ -329,11 +335,11 @@ function ObstacleList({ obstacles, onVote, votedIds }) {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold leading-snug text-slate-100">
-                    {report.place || report.district || 'ไม่ระบุจุด'}
+                    {report.place || report.district || t('rp.unknownSpot')}
                   </p>
                   <p className="mt-0.5 text-sm font-medium" style={{ color }}>
                     {report.level_label || levelLabel(report.level)}
-                    {report.depth_cm ? ` · วัดได้ ${report.depth_cm} ซม.` : ''}
+                    {report.depth_cm ? ` · ${t('rp.measuredShort')} ${depthText(report.depth_cm, lang)}` : ''}
                   </p>
                   {/* Right under the level, and coloured: on a road that can
                       change within the hour, the age is what says whether the
@@ -359,15 +365,15 @@ function ObstacleList({ obstacles, onVote, votedIds }) {
                   )}
                   <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
                     <span>ห่างเส้นทาง {distance_from_route_m} ม.</span>
-                    <span>ยืนยัน {report.confirm_count} · แย้ง {report.dispute_count}</span>
+                    <span>{t('popup.tally', { confirms: report.confirm_count, disputes: report.dispute_count })}</span>
                     {report.source === 'official' && (
-                      <span className="chip bg-sky-500/15 text-sky-300">ข้อมูลทางการ</span>
+                      <span className="chip bg-sky-500/15 text-sky-300">{t('rp.official')}</span>
                     )}
                   </div>
                   {safePhotoUrl(report.photo_url) && (
                     <img
                       src={safePhotoUrl(report.photo_url)}
-                      alt="ภาพจุดน้ำท่วม"
+                      alt={t('popup.photoAlt')}
                       loading="lazy"
                       className="mt-2 max-h-44 rounded-lg object-cover"
                     />
@@ -378,16 +384,16 @@ function ObstacleList({ obstacles, onVote, votedIds }) {
                       onClick={() => onVote(report.id, 'confirm')}
                       disabled={voted}
                     >
-                      ยังท่วมอยู่
+                      {t('report.stillFlooded')}
                     </button>
                     <button
                       className="rounded-lg border border-slate-700 px-2.5 py-1 text-xs text-slate-300 hover:bg-slate-800 disabled:opacity-40"
                       onClick={() => onVote(report.id, 'dispute')}
                       disabled={voted}
                     >
-                      น้ำลดแล้ว
+                      {t('report.subsided')}
                     </button>
-                    {voted && <span className="self-center text-xs text-emerald-400">ขอบคุณครับ</span>}
+                    {voted && <span className="self-center text-xs text-emerald-400">{t('popup.thanks')}</span>}
                   </div>
                 </div>
               </div>
@@ -416,6 +422,7 @@ export default function RoutePanel({
   onAskChat,
   onReportHere,
 }) {
+  const { t, lang } = useT()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [showHelp, setShowHelp] = useState(false)
@@ -449,8 +456,8 @@ export default function RoutePanel({
 
   const check = async () => {
     setError(null)
-    if (!origin && !originText.trim()) return setError('กรุณาระบุต้นทาง')
-    if (!destination && !destinationText.trim()) return setError('กรุณาระบุปลายทาง')
+    if (!origin && !originText.trim()) return setError(t('route.needOrigin'))
+    if (!destination && !destinationText.trim()) return setError(t('route.needDest'))
 
     // Cancel a check still in flight so a fast second submit cannot have its
     // result overwritten by the slower first one.
@@ -476,7 +483,7 @@ export default function RoutePanel({
       if (data.destination_label && !destinationText) setDestinationText(data.destination_label)
     } catch (err) {
       if (err.name === 'AbortError') return
-      setError(err instanceof ApiError ? err.message : 'ตรวจเส้นทางไม่สำเร็จ ลองใหม่อีกครั้ง')
+      setError(err instanceof ApiError ? err.message : t('rp.checkFailed'))
     } finally {
       setBusy(false)
     }
@@ -487,7 +494,7 @@ export default function RoutePanel({
       await api.voteReport(reportId, choice)
       setVotedIds((previous) => new Set(previous).add(reportId))
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'ส่งความเห็นไม่สำเร็จ')
+      setError(err instanceof ApiError ? err.message : t('rp.voteFailed'))
     }
   }
 
@@ -500,7 +507,7 @@ export default function RoutePanel({
 
       <div className="card p-4">
         <div className="mb-3 flex items-center justify-between gap-2">
-          <h2 className="text-base font-bold">จะไปไหน เช็คก่อนออกรถ</h2>
+          <h2 className="text-base font-bold">{t('route.title')}</h2>
           <div className="flex shrink-0 items-center gap-1">
             {hasAnything && (
               <button
@@ -515,19 +522,19 @@ export default function RoutePanel({
               type="button"
               onClick={() => setShowHelp(true)}
               className="flex items-center gap-1.5 rounded-lg border border-slate-700 py-1 pl-1.5 pr-2.5 text-xs text-slate-300 transition-colors hover:bg-slate-800"
-              title="วิธีการใช้งาน"
+              title={t('route.how')}
             >
               <span className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-600 text-[11px] font-bold">
                 i
               </span>
-              วิธีการใช้งาน
+              {t('route.how')}
             </button>
           </div>
         </div>
         <div className="space-y-3">
           <EndpointInput
             id="origin"
-            label="ต้นทาง"
+            label={t('route.from')}
             badge="A"
             value={originText}
             point={origin}
@@ -550,15 +557,15 @@ export default function RoutePanel({
               type="button"
               onClick={swap}
               className="rounded-lg border border-slate-700 px-3 py-1 text-sm text-slate-300 hover:bg-slate-800"
-              title="สลับต้นทางกับปลายทาง"
+              title={t('route.swapTitle')}
             >
-              ⇅ สลับ
+              ⇅ {t('route.swap')}
             </button>
           </div>
 
           <EndpointInput
             id="destination"
-            label="ปลายทาง"
+            label={t('route.to')}
             badge="B"
             value={destinationText}
             point={destination}
@@ -578,7 +585,7 @@ export default function RoutePanel({
         </div>
 
         <button onClick={check} disabled={busy} className="btn-primary mt-4 w-full">
-          {busy ? 'กำลังตรวจเส้นทาง…' : 'เช็คเส้นทางนี้'}
+          {busy ? t('route.checking') : t('route.check')}
         </button>
 
         {error && (

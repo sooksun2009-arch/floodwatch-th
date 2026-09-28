@@ -178,6 +178,10 @@ class Settings(BaseSettings):
     # resolution against quota.
     rain_forecast_samples: int = 3
     rain_forecast_radius_km: float = 10.0
+    # How near a traffic camera has to be to count as "rain on this route",
+    # used when the area query is unavailable. Generous, because a camera is a
+    # single point standing in for the weather around it.
+    rain_camera_km: float = 8.0
 
     # Upstream allows 60 requests a minute and 5,000 a day across the whole
     # key. Map tiles can spend that in minutes — one pan with the radar on is

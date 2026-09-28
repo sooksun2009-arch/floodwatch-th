@@ -391,6 +391,40 @@ async def forecast_at(lat: float, lng: float) -> list[dict]:
     return out
 
 
+async def rain_from_cameras(path: list[list[float]]) -> dict | None:
+    """Rain on the route, measured at the traffic cameras standing on it.
+
+    A fallback with a real advantage: the query endpoints are refused for this
+    key while the camera list is not, and one nationwide fetch — already
+    cached — serves every route check instead of a call per route. What it
+    cannot give is the forecast. These are observations of now.
+    """
+    from .routing import point_to_path_km
+
+    data = await raining_cameras()
+    if not data.get("available"):
+        return None
+
+    near = []
+    for camera in data.get("cameras") or []:
+        distance, _ = point_to_path_km(camera["lat"], camera["lng"], path)
+        if distance <= settings.rain_camera_km:
+            near.append(camera)
+    if not near:
+        return None
+
+    worst = max(near, key=lambda c: c.get("rain_intensity") or 0)
+    return {
+        "coverage_pct": None,
+        "max_intensity": worst.get("rain_intensity"),
+        "avg_intensity": None,
+        "level": worst.get("rain_level"),
+        "camera_count": len(near),
+        "source": "cameras",
+        "last_updated": data.get("last_updated"),
+    }
+
+
 async def route_rain(path: list[list[float]]) -> dict | None:
     """Rain over a route now, and what is heading for it.
 
@@ -407,6 +441,16 @@ async def route_rain(path: list[list[float]]) -> dict | None:
         return_exceptions=True,
     )
     now = results[0] if not isinstance(results[0], BaseException) else None
+
+    # The polygon query is refused outright for some keys. The cameras are not,
+    # so fall back to what is standing on the road rather than reporting
+    # nothing at all.
+    if now is None:
+        try:
+            now = await rain_from_cameras(path)
+        except Exception as exc:
+            _remember_failure("camera_fallback", exc)
+            now = None
 
     # Worst case across the route per lead time: someone needs to know about
     # the one stretch that is about to get hit, not the average of the trip.
@@ -434,10 +478,19 @@ def summarise(now: dict | None, soon: list[dict]) -> str | None:
     def notable(entry: dict | None) -> bool:
         if not entry:
             return False
-        return ((entry.get("max_intensity") or 0) >= NOTABLE_INTENSITY
-                and (entry.get("coverage_pct") or 0) >= NOTABLE_COVERAGE_PCT)
+        if (entry.get("max_intensity") or 0) < NOTABLE_INTENSITY:
+            return False
+        # Camera readings have no coverage figure — a camera is a point, not an
+        # area — so a wet camera on the route is notable on its own.
+        if entry.get("source") == "cameras":
+            return True
+        return (entry.get("coverage_pct") or 0) >= NOTABLE_COVERAGE_PCT
 
     if notable(now):
+        if now.get("source") == "cameras":
+            count = now.get("camera_count") or 1
+            return (f"ขณะนี้มี{now.get('level') or 'ฝนตก'}บนเส้นทาง "
+                    f"(เห็นจากกล้อง {count} จุด)")
         return f"ขณะนี้มี{now.get('level') or 'ฝนตก'}บนเส้นทาง"
 
     upcoming = next((s for s in soon if notable(s)), None)

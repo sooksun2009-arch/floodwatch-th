@@ -368,7 +368,7 @@ function telegramChatId() {
   // messages ever arriving.
   Logger.log('เลขห้องแชทของคุณคือ %s (%s)',
              String(chat.id), chat.first_name || chat.title || '');
-  Logger.log('ใส่แบบนี้: const TELEGRAM_CHAT_ID = '' + String(chat.id) + '';');
+  Logger.log('ใส่แบบนี้ -> const TELEGRAM_CHAT_ID = "%s";', String(chat.id));
   return String(chat.id);
 }
 

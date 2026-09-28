@@ -105,6 +105,25 @@ function SafetyNotice() {
         <a href="tel:1555" className="font-semibold text-amber-200 underline">
           1555
         </a>
+        {/* This app says on the same line that it cannot summon help, which
+            leaves someone who does need help with nowhere to go. Rodnam is a
+            separate civilian platform with agencies signed up to answer, so
+            handing them over is more use than ending the sentence.
+
+            Inside this group rather than on a line of its own: a second row
+            made the notice taller, pushed the map down, and put the chat
+            button back over the OpenStreetMap credit. The phone numbers stay
+            first -- a line that is always answered beats a form. */}
+        <span className="text-amber-200/70">· {t('safety.needHelp')}</span>
+        <a
+          href="https://rodnam.zenture.co/"
+          target="_blank"
+          rel="noopener noreferrer"
+          title={t('safety.rodnamTitle')}
+          className="font-semibold text-amber-200 underline decoration-amber-700 underline-offset-2 hover:text-amber-100"
+        >
+          {t('safety.rodnam')} ↗
+        </a>
       </span>
     </div>
   )

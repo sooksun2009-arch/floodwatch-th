@@ -779,6 +779,47 @@ export default function MapView({
     // reader started in, and only new reports would come through translated.
   }, [reports, cameras, stations, routes, lang])
 
+  // Lift the OpenStreetMap credit clear of whatever is parked in that corner,
+  // measured rather than guessed. A fixed offset was correct twice and wrong
+  // the third time: adding one line to the safety notice moved the map down
+  // and the chat button back over the credit. Showing that credit is a
+  // condition of using the map, so it cannot depend on nothing else changing.
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return undefined
+
+    const measure = () => {
+      const box = container.getBoundingClientRect()
+      const credit = container.querySelector('.maplibregl-ctrl-attrib')
+      const width = credit ? credit.getBoundingClientRect().width : 170
+      let lift = 12
+      for (const el of document.querySelectorAll('button, a')) {
+        if (credit?.contains(el)) continue
+        const r = el.getBoundingClientRect()
+        if (r.width < 8 || r.height < 8) continue
+        // Only things sitting in the strip the credit occupies.
+        const inStrip = r.right > box.right - width - 24 && r.left < box.right + 24
+        const nearBottom = r.bottom > box.bottom - 140 && r.top < box.bottom + 80
+        if (inStrip && nearBottom) {
+          lift = Math.max(lift, box.bottom - r.top + 8)
+        }
+      }
+      container.style.setProperty('--fw-credit-lift', `${Math.round(lift)}px`)
+    }
+
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(container)
+    window.addEventListener('resize', measure)
+    // Layout settles after fonts and the map chrome land.
+    const later = setTimeout(measure, 1200)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', measure)
+      clearTimeout(later)
+    }
+  })
+
   // Origin / destination pins.
   useEffect(() => {
     const map = mapRef.current

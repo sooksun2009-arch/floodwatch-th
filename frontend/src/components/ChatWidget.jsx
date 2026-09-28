@@ -35,7 +35,27 @@ export default function ChatWidget({ open, setOpen, pendingMessage, onConsumed, 
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [starters, setStarters] = useState([])
+
+  // The label is translated; the message sent is not. The assistant matches
+  // Thai patterns, so an English payload would give a chip that looks
+  // inviting and then fails -- worse than a Thai chip that works.
+  const label = (starter) => {
+    const known = {
+      'จะไปจากบางนาไปรามคำแหง มีน้ำท่วมไหม': 'chat.s1',
+      'น้ำท่วมใกล้ฉันไหม': 'chat.s2',
+      'ตอนนี้ท่วมหนักที่ไหน': 'chat.s3',
+      'ขอดูกล้อง CCTV ใกล้ฉัน': 'chat.s4',
+    }[starter.message]
+    return known ? t(known) : starter.label
+  }
   const [coords, setCoords] = useState(null)
+  // Re-greet in the new language, but only while the greeting is all there
+  // is: rewriting a conversation someone is having would lose their place.
+  useEffect(() => {
+    setMessages((current) =>
+      current.length === 1 && current[0].role === 'bot' ? [greeting(t, lang)] : current)
+  }, [lang, t])
+
   const scrollRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -216,7 +236,7 @@ export default function ChatWidget({ open, setOpen, pendingMessage, onConsumed, 
                     onClick={() => send(suggestion.message)}
                     className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300 hover:bg-slate-800"
                   >
-                    {suggestion.label}
+                    {label(suggestion)}
                   </button>
                 ))}
               </div>
@@ -232,7 +252,7 @@ export default function ChatWidget({ open, setOpen, pendingMessage, onConsumed, 
                 onClick={() => send(starter.message)}
                 className="rounded-full border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800"
               >
-                {starter.label}
+                {label(starter)}
               </button>
             ))}
           </div>

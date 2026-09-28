@@ -80,7 +80,10 @@
    !important because maplibre's own stylesheet sets bottom: 0 at the same
    specificity and loads after this file. */
 .maplibregl-ctrl-bottom-right {
-  bottom: 3.75rem !important;
+  /* Read by MapView, which measures the buttons actually on screen and sets
+     it. A fixed number was right twice and wrong the third time, when a line
+     was added to the safety notice and the map moved down under it. */
+  bottom: var(--fw-credit-lift, 3.75rem) !important;
 }
 .maplibregl-ctrl-attrib a {
   color: rgb(148 163 184) !important;

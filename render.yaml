@@ -36,6 +36,12 @@ services:
         value: "true"
       - key: ALLOW_ANONYMOUS_REPORTS
         value: "true"
+      # A photo is the difference between a claim and evidence, and it is what
+      # a passer-by can judge for themselves. Note the interaction with
+      # AUTO_APPROVE_WITH_PHOTO below: with both on, every public report goes
+      # straight to the map and the moderation queue stays empty by design.
+      - key: REQUIRE_PHOTO
+        value: "true"
 
       # A moderation queue with one person behind it goes dark exactly when it
       # matters — the night it floods. These let a report onto the map on its

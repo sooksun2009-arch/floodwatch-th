@@ -165,6 +165,61 @@ const check = (name, ok, extra = '') => {
   if (!closed) await page.keyboard.press('Escape')
   await new Promise((r) => setTimeout(r, 400))
 
+  // The share button, both ways it can work. On a Thai phone the native sheet
+  // is how this reaches LINE; on a desktop there is no sheet and the clipboard
+  // is the whole feature.
+  await page.evaluate(() => {
+    window.__shared = null
+    window.__copied = null
+    navigator.share = (data) => {
+      window.__shared = data
+      return Promise.resolve()
+    }
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: (t) => { window.__copied = t; return Promise.resolve() } },
+    })
+  })
+
+  const pressShare = () =>
+    page.evaluate(() => {
+      const b = [...document.querySelectorAll('button')].find((x) =>
+        x.textContent.includes('แชร์'),
+      )
+      if (!b) return false
+      b.click()
+      return true
+    })
+
+  check('มีปุ่มแชร์บนหัวเว็บ', await pressShare())
+  await new Promise((r) => setTimeout(r, 300))
+  const shared = await page.evaluate(() => window.__shared)
+  check('กดแล้วเรียกแผงแชร์ของเครื่อง', Boolean(shared), JSON.stringify(shared))
+  if (shared) {
+    check(
+      'แชร์หน้าแรกของแอป ไม่ใช่ URL ที่เปิดอยู่',
+      shared.url === (await page.evaluate(() => window.location.origin)),
+      `${shared.url} vs origin`,
+    )
+    check('ข้อความแชร์บอกว่าแอปทำอะไร',
+      /น้ำท่วม/.test(shared.title + shared.text), JSON.stringify(shared))
+  }
+
+  // No native sheet: the link has to end up on the clipboard instead.
+  await page.evaluate(() => {
+    // Assigning undefined rather than delete: delete removes only the own
+    // property and uncovers the browser's native share, which is not what a
+    // desktop without one looks like.
+    Object.defineProperty(navigator, 'share', { configurable: true, value: undefined })
+    window.__copied = null
+  })
+  await pressShare()
+  await new Promise((r) => setTimeout(r, 300))
+  const copied = await page.evaluate(() => window.__copied)
+  check('ไม่มีแผงแชร์ -> คัดลอกลิงก์แทน', Boolean(copied && copied.includes('http')), copied)
+  const told = await page.evaluate(() => document.body.innerText.includes('คัดลอกลิงก์แล้ว'))
+  check('และบอกผู้ใช้ว่าคัดลอกแล้ว', told)
+
   // Floating controls must not sit on top of one another. This app keeps
   // growing corner buttons — radar, report, chat, zoom, locate — and two of
   // them landed on each other twice before anyone noticed, because each was

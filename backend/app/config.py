@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     # approves them. Set false for a closed/internal deployment.
     require_moderation: bool = True
     allow_anonymous_reports: bool = True
+    # A photo is the difference between a claim and evidence. Without one a
+    # report can carry no place, no name and no picture and still reach the
+    # map, which is what teaches people to stop trusting it. It also collapses
+    # the moderation queue: a report with a photo goes live on its own, so
+    # requiring one means nothing waits for a human who is asleep.
+    # Officials and moderators are exempt — their reports are already vouched
+    # for, and they file from desks as well as from roadsides.
+    require_photo: bool = True
 
     # --- Automatic approval ---
     # A queue guarded by one person fails at exactly the wrong moment: the night

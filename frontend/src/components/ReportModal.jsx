@@ -89,6 +89,9 @@ export default function ReportModal({ open, onClose, initialPoint, onPickOnMap, 
   const submit = async (event) => {
     event.preventDefault()
     if (!point) return setError('ต้องระบุตำแหน่งก่อน กดปุ่มใช้ตำแหน่งของฉัน วางพิกัด หรือปักหมุดบนแผนที่')
+    // Checked here as well as on the server: a form that accepts everything
+    // and then rejects it wastes the photo upload and the person's time.
+    if (!photo) return setError('ต้องแนบรูปถ่ายจุดที่น้ำท่วมด้วย')
 
     setBusy(true)
     setError(null)
@@ -313,8 +316,12 @@ export default function ReportModal({ open, onClose, initialPoint, onPickOnMap, 
 
               <div>
                 <label className="label" htmlFor="photo">
-                  รูปถ่าย (แนบรูปแล้วขึ้นแผนที่ทันที)
+                  รูปถ่ายจุดที่น้ำท่วม <span className="text-red-400">*</span>
                 </label>
+                <p className="mb-1.5 text-xs text-slate-400">
+                  จำเป็นต้องมี — คนที่กำลังจะขับผ่านใช้รูปตัดสินใจ ไม่ใช่ตัวเลข
+                  และรายงานที่มีรูปจะขึ้นแผนที่ทันทีโดยไม่ต้องรอตรวจ
+                </p>
                 <input
                   id="photo"
                   type="file"
@@ -356,9 +363,20 @@ export default function ReportModal({ open, onClose, initialPoint, onPickOnMap, 
             </div>
 
             <div className="sticky bottom-0 border-t border-slate-800 bg-slate-900/95 p-4 backdrop-blur">
-              <button type="submit" className="btn-danger w-full" disabled={busy}>
+              <button
+                type="submit"
+                className="btn-danger w-full disabled:opacity-50"
+                disabled={busy || !photo || !point}
+              >
                 {busy ? 'กำลังส่ง…' : 'ส่งรายงาน'}
               </button>
+              {!busy && (!photo || !point) && (
+                <p className="mt-1.5 text-center text-xs text-slate-400">
+                  ยัง{!point ? 'ไม่ได้ระบุตำแหน่ง' : ''}
+                  {!point && !photo ? ' และ' : ''}
+                  {!photo ? 'ไม่ได้แนบรูป' : ''}
+                </p>
+              )}
             </div>
           </form>
         )}

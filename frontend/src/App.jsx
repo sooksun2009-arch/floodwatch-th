@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, useState } from 'react'
 import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth'
 import Home from './pages/Home'
@@ -14,6 +14,71 @@ const tabClass = ({ isActive }) =>
   `rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
     isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
   }`
+
+const SHARE = {
+  title: 'FloodWatch TH — เช็คน้ำท่วมก่อนออกรถ',
+  text: 'เช็คว่าเส้นทางที่จะไปมีน้ำท่วมไหม จากรายงานของคนในพื้นที่ เครื่องวัดระดับน้ำ และเรดาร์ฝน',
+}
+
+function ShareButton() {
+  // Two mechanisms, because they fail in different places. navigator.share
+  // opens the phone's own sheet — which on a Thai phone means LINE, where
+  // this actually gets passed around — but it does not exist on most
+  // desktops. Clipboard is the desktop answer and can be refused outright
+  // in a non-secure context or by policy, so neither is assumed.
+  const [said, setSaid] = useState(null)
+
+  // Always the app's front door, never the page in the address bar: sharing
+  // /admin or a half-filled form helps nobody.
+  const url = typeof window === 'undefined' ? '' : window.location.origin
+
+  const flash = (message) => {
+    setSaid(message)
+    setTimeout(() => setSaid(null), 2200)
+  }
+
+  const share = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({ ...SHARE, url })
+        return
+      } catch (error) {
+        // Dismissing the sheet is a choice, not a failure.
+        if (error?.name === 'AbortError') return
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(`${SHARE.title}
+${url}`)
+      flash('คัดลอกลิงก์แล้ว')
+    } catch {
+      // Last resort: put it somewhere it can be copied by hand.
+      flash(url)
+    }
+  }
+
+  return (
+    <div className="relative shrink-0">
+      <button
+        onClick={share}
+        className="flex items-center gap-1.5 rounded-lg border border-slate-700 px-2.5 py-1.5 text-sm text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+        title="แชร์แอปนี้ให้คนอื่น"
+      >
+        <span aria-hidden="true">🔗</span>
+        <span className="hidden sm:inline">แชร์</span>
+        <span className="sr-only">แชร์แอปนี้</span>
+      </button>
+      {said && (
+        <span
+          role="status"
+          className="absolute right-0 top-full z-40 mt-1.5 whitespace-nowrap rounded-lg border border-emerald-800 bg-emerald-950/95 px-2.5 py-1.5 text-xs text-emerald-200 shadow-lg backdrop-blur"
+        >
+          {said}
+        </span>
+      )}
+    </div>
+  )
+}
 
 function Nav() {
   const { user, logout, isModerator } = useAuth()
@@ -40,6 +105,7 @@ function Nav() {
             </NavLink>
           )}
         </nav>
+        <ShareButton />
         {user ? (
           <div className="flex shrink-0 items-center gap-2">
             <span className="hidden text-sm text-slate-400 sm:inline">

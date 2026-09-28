@@ -138,6 +138,13 @@ def create_report(payload: ReportIn, request: Request, db: Session = Depends(get
     is_official = user is not None and user.role in (Role.moderator.value, Role.admin.value)
     source = ReportSource.official.value if is_official else ReportSource.user.value
 
+    # Placed after is_official is known, not before it exists.
+    if settings.require_photo and not is_official and not payload.photo_url:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "ต้องแนบรูปถ่ายจุดที่น้ำท่วมด้วย — รูปช่วยให้คนอื่นตัดสินใจได้จริง "
+            "และทำให้รายงานขึ้นแผนที่ทันทีโดยไม่ต้องรอตรวจ")
+
     province_id = payload.province_id
     if province_id is None:
         province = resolve_province(db, payload.lat, payload.lng)

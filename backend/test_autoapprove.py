@@ -12,6 +12,10 @@ os.environ["UPLOAD_DIR"] = f"{tmp}/uploads"
 os.environ["JWT_SECRET"] = "test-secret"
 os.environ["SEED_DEMO_DATA"] = "false"
 os.environ["GEOCODE_ENABLED"] = "false"
+# Photo requirement off here on purpose: this suite tests what happens to
+# reports WITHOUT one — the corroboration rules that only apply when the
+# gate is down. The gate itself is covered in test_photo.py.
+os.environ["REQUIRE_PHOTO"] = "false"
 os.environ["SYNC_STATIONS_ON_START"] = "false"
 os.environ["REQUIRE_MODERATION"] = "true"
 # Reports per IP per hour — raised so the rate limiter does not mask a result.

@@ -7,6 +7,9 @@ os.environ["UPLOAD_DIR"] = f"{tmp}/uploads"
 os.environ["JWT_SECRET"] = "test-secret"
 os.environ["SEED_DEMO_DATA"] = "true"
 os.environ["GEOCODE_ENABLED"] = "false"
+# Off here so the end-to-end path stays exercised as it was; the gate has
+# its own suite.
+os.environ["REQUIRE_PHOTO"] = "false"
 
 from fastapi.testclient import TestClient
 from app.main import app

@@ -15,7 +15,7 @@ from .migrate import report_drift, sync_schema
 from .models import utcnow
 from .routers import (
     admin, auth, cameras, chat, flood_extent, imports, misc, rain, reports,
-    route_check, water_stations,
+    route_check, visits, water_stations,
 )
 from .seed import run_seed
 
@@ -32,6 +32,10 @@ async def lifespan(app: FastAPI):
     # create_all makes missing tables; sync_schema adds columns that were added
     # to a model after the table already existed. Together they cover every
     # additive change, which is all this app has needed so far.
+    # Imported for its side effect: a model the app never touches at import
+    # time is a table create_all never makes.
+    from . import visits as _visits  # noqa: F401
+
     Base.metadata.create_all(bind=engine)
     added = sync_schema(engine)
     if added:
@@ -126,7 +130,8 @@ app.add_middleware(
 
 for router in (auth.router, reports.router, cameras.router, route_check.router,
                chat.router, misc.router, admin.router, imports.router,
-               water_stations.router, rain.router, flood_extent.router):
+               water_stations.router, rain.router, flood_extent.router,
+               visits.router):
     app.include_router(router)
 
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError, LEVELS, levelLabel, safePhotoUrl, timeAgo } from '../api'
 import { useAuth } from '../auth'
+import { useT } from '../i18n'
 
 const TABS = [
   ['queue', 'คิวตรวจสอบ'],
@@ -8,6 +9,7 @@ const TABS = [
   ['cameras', 'จัดการกล้อง'],
   ['import', 'นำเข้าข้อมูลหน่วยงาน'],
   ['audit', 'บันทึกการใช้งาน'],
+  ['visits', 'ผู้เข้าชม'],
 ]
 
 // ---------------------------------------------------------------- queue
@@ -746,6 +748,156 @@ function Audit() {
 
 // ---------------------------------------------------------------- shell
 
+
+/**
+ * How many people the map reached.
+ *
+ * Refreshes on its own because the useful question after posting a link is
+ * "is anyone here right now", and that answer goes stale in seconds. The
+ * numbers are counts of counts -- see backend/app/visits.py for what is
+ * deliberately not stored.
+ */
+function VisitsPanel() {
+  const { t } = useT()
+  const [data, setData] = useState(null)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    let alive = true
+    const read = () =>
+      api
+        .visitSummary()
+        .then((d) => alive && (setData(d), setError(null)))
+        .catch((e) => alive && setError(e.message))
+    read()
+    const timer = setInterval(read, 15000)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [])
+
+  if (error) return <p className="py-8 text-center text-red-300">{error}</p>
+  if (!data) return <p className="py-8 text-center text-slate-400">…</p>
+
+  const today = data.days[data.days.length - 1] || { views: 0, visitors: 0 }
+  const yesterday = data.days[data.days.length - 2]
+  const peakHour = data.hours.reduce((a, h) => Math.max(a, h.views), 0)
+  const peakDay = data.days.reduce((a, d) => Math.max(a, d.views), 0)
+  const empty = data.days.every((d) => d.views === 0)
+
+  const Stat = ({ label, value, unit, note, live }) => (
+    <div className="card p-4">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-sm text-slate-400">{label}</p>
+        {live && (
+          <span className="chip bg-emerald-500/15 text-emerald-300">● live</span>
+        )}
+      </div>
+      <p className="mt-1 text-3xl font-bold text-white">
+        {value}
+        {unit && <span className="ml-1 text-base font-medium text-slate-400">{unit}</span>}
+      </p>
+      {note && <p className="mt-1 text-xs text-slate-500">{note}</p>}
+    </div>
+  )
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Stat
+          label={t('vis.onlineNow')}
+          value={data.online_now}
+          unit={t('vis.people')}
+          live
+        />
+        <Stat
+          label={t('vis.today')}
+          value={today.visitors.toLocaleString()}
+          unit={t('vis.people')}
+          note={yesterday
+            ? `${yesterday.day}: ${yesterday.visitors.toLocaleString()}`
+            : undefined}
+        />
+        <Stat
+          label={t('vis.viewsToday')}
+          value={today.views.toLocaleString()}
+          unit={t('vis.times')}
+        />
+      </div>
+
+      {empty ? (
+        <p className="card p-8 text-center text-slate-400">{t('vis.none')}</p>
+      ) : (
+        <>
+          <section className="card p-4">
+            <h3 className="mb-3 text-sm font-bold text-slate-200">{t('vis.byHour')}</h3>
+            <div className="flex items-end gap-0.5" style={{ height: 120 }}>
+              {Array.from({ length: 24 }, (_, hour) => {
+                const found = data.hours.find((h) => h.hour === hour)
+                const views = found ? found.views : 0
+                const now = new Date().getHours() === hour
+                return (
+                  <div key={hour} className="flex flex-1 flex-col items-center justify-end">
+                    <span className="mb-0.5 text-[9px] text-slate-500">
+                      {views || ''}
+                    </span>
+                    <div
+                      className={`w-full rounded-t ${now ? 'bg-emerald-500' : 'bg-sky-600'}`}
+                      style={{
+                        height: peakHour ? `${Math.max(2, (100 * views) / peakHour)}%` : 2,
+                      }}
+                      title={`${hour}:00 — ${views}`}
+                    />
+                    <span className="mt-1 text-[9px] text-slate-500">
+                      {hour % 3 === 0 ? String(hour).padStart(2, '0') : ''}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+
+          <section className="card p-4">
+            <h3 className="mb-3 text-sm font-bold text-slate-200">{t('vis.byDay')}</h3>
+            <div className="space-y-1.5">
+              {[...data.days].reverse().map((d) => (
+                <div key={d.day} className="flex items-center gap-3 text-xs">
+                  <span className="w-20 shrink-0 text-slate-500">{d.day.slice(5)}</span>
+                  <div className="h-4 flex-1 overflow-hidden rounded bg-slate-800">
+                    <div
+                      className="h-full rounded bg-sky-600"
+                      style={{ width: peakDay ? `${(100 * d.views) / peakDay}%` : 0 }}
+                    />
+                  </div>
+                  <span className="w-28 shrink-0 text-right text-slate-300">
+                    {d.visitors.toLocaleString()} {t('vis.people')} ·{' '}
+                    {d.views.toLocaleString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="card p-4">
+            <h3 className="mb-2 text-sm font-bold text-slate-200">{t('vis.byPage')}</h3>
+            <div className="space-y-1 text-sm">
+              {data.pages.map((p) => (
+                <div key={p.page} className="flex justify-between text-slate-400">
+                  <span>{t(`vis.page.${p.page}`)}</span>
+                  <span className="text-slate-300">{p.views.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        </>
+      )}
+
+      <p className="px-1 text-xs leading-relaxed text-slate-500">{t('vis.note')}</p>
+    </div>
+  )
+}
+
 export default function Admin() {
   const { user } = useAuth()
   const [tab, setTab] = useState('queue')
@@ -777,6 +929,7 @@ export default function Admin() {
       {tab === 'live' && <LiveReports />}
       {tab === 'cameras' && <CameraAdmin />}
       {tab === 'import' && <ImportPanel />}
+      {tab === 'visits' && <VisitsPanel />}
       {tab === 'audit' && <Audit />}
     </div>
   )

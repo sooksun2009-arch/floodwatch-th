@@ -146,6 +146,7 @@ export const api = {
   updateUser: (id, payload) =>
     request(`/api/admin/users/${id}`, { method: 'PATCH', body: payload }),
   audit: () => request('/api/admin/audit'),
+  visitSummary: () => request('/api/visits/summary'),
 
   importPaste: (payload) => request('/api/import/paste', { method: 'POST', body: payload }),
   importFile: (file, { sourceName, autoApprove, dryRun }) => {

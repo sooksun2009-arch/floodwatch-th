@@ -1,8 +1,9 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
-import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom'
+import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { QUEUE_CHANGED, api } from './api'
 import { AuthProvider, useAuth } from './auth'
 import { useT } from './i18n'
+import { countVisit, startHeartbeat } from './visits'
 import Home from './pages/Home'
 
 // Admin and stats are rarely opened and pull in extra code; loading them on
@@ -164,6 +165,22 @@ function usePendingCount(enabled) {
   return pending
 }
 
+/**
+ * One count per page opened, and a heartbeat while a tab stays open.
+ *
+ * Counting is the least important thing this app does, so it is wired up here
+ * where it cannot get in the way of anything: it sends a page label, never a
+ * path, and it never surfaces an error.
+ */
+function VisitCounter() {
+  const location = useLocation()
+  useEffect(() => {
+    countVisit(location.pathname)
+  }, [location.pathname])
+  useEffect(() => startHeartbeat(), [])
+  return null
+}
+
 function Nav() {
   const { user, logout, isModerator } = useAuth()
   const { t } = useT()
@@ -246,6 +263,7 @@ export default function App() {
   return (
     <AuthProvider>
       <div className="flex min-h-screen flex-col">
+        <VisitCounter />
         <Nav />
         <main className="flex-1">
           <Suspense fallback={<div className="p-8 text-center text-slate-400">กำลังโหลด…</div>}>

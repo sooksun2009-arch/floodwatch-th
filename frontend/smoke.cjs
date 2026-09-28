@@ -161,13 +161,31 @@ const check = (name, ok, extra = '') => {
     check('ยืนยันแล้วกลับเข้าฟอร์มพร้อมพิกัด', text.includes('ปักหมุดแล้ว'),
       text.slice(0, 200))
   }
-  const closed = await clickByText('ปิด')
-  if (!closed) await page.keyboard.press('Escape')
+  // Close it properly. The form's close control is an "×" with an aria-label,
+  // so matching on the word alone missed it and left the dialog open over
+  // everything that followed.
+  const closedDialog = await page.evaluate(() => {
+    const byLabel = document.querySelector('[aria-label="ปิด"]')
+    if (byLabel) {
+      byLabel.click()
+      return true
+    }
+    const byText = [...document.querySelectorAll('button')].find(
+      (b) => b.textContent.trim() === 'ปิด',
+    )
+    byText?.click()
+    return Boolean(byText)
+  })
   await new Promise((r) => setTimeout(r, 400))
+  check('ปิดหน้าต่างแจ้งน้ำท่วมได้', closedDialog)
+  check(
+    'ปิดแล้วไม่มีหน้าต่างค้างทับแผนที่',
+    !(await page.evaluate(() => Boolean(document.querySelector('[role="dialog"]')))),
+  )
 
-  // Filtering by the legend. The check that matters is that pins leave the
-  // map, not that the legend row goes grey — those are easy to confuse and
-  // only one of them is the feature.
+  // Filtering by the legend: picking a category shows only that one. The check
+  // that matters is which pins remain on the map, not which legend row turned
+  // white — those are easy to confuse and only one of them is the feature.
   const drawn = (layer) =>
     page.evaluate(
       (id) => (window.__fwMap?.getLayer(id)
@@ -186,24 +204,40 @@ const check = (name, ok, extra = '') => {
       return true
     }, label)
 
-  const before = await drawn('report-dots')
-  if (before > 0) {
-    check('กดคำอธิบายสี "10-30 ซม." ได้', await clickLegend('10-30 ซม.'))
-    await new Promise((r) => setTimeout(r, 500))
-    const after = await drawn('report-dots')
-    check('ซ่อนแล้วหมุดหายจากแผนที่จริง', after < before, `${before} -> ${after}`)
+  const settle = () => new Promise((r) => setTimeout(r, 450))
+  const all = await drawn('report-dots')
 
-    const note = await page.evaluate(() =>
-      document.body.innerText.includes('แสดงทั้งหมดอีกครั้ง'),
-    )
-    check('บอกว่ามีอะไรถูกซ่อนอยู่ (ไม่ใช่หายไปเฉย ๆ)', note)
+  if (all >= 2) {
+    check('กดคำอธิบายสี "10-30 ซม." ได้', await clickLegend('10-30 ซม.'))
+    await settle()
+    const onlyShallow = await drawn('report-dots')
+    check('เลือกหนึ่งชนิด -> เห็นเฉพาะชนิดนั้น', onlyShallow > 0 && onlyShallow < all,
+      `ทั้งหมด ${all} -> เลือกแล้ว ${onlyShallow}`)
+
+    check('บอกว่ากำลังกรองอยู่', await page.evaluate(
+      () => document.body.innerText.includes('แสดงเฉพาะ')))
+
+    await clickLegend('เกิน 60 ซม.')
+    await settle()
+    check('เลือกเพิ่มได้ -> เห็นทั้งสองชนิด', (await drawn('report-dots')) === all,
+      `${await drawn('report-dots')} vs ${all}`)
 
     await clickLegend('10-30 ซม.')
-    await new Promise((r) => setTimeout(r, 500))
-    check('กดอีกครั้งแล้วกลับมา', (await drawn('report-dots')) === before,
-      `${before} -> ${await drawn('report-dots')}`)
+    await settle()
+    check('กดซ้ำเพื่อเอาออกจากที่เลือก', (await drawn('report-dots')) < all,
+      `${await drawn('report-dots')} vs ${all}`)
+
+    await page.evaluate(() => {
+      const b = [...document.querySelectorAll('button')].find((x) =>
+        x.textContent.includes('กดเพื่อแสดงทั้งหมด'),
+      )
+      b?.click()
+    })
+    await settle()
+    check('ล้างตัวกรอง -> กลับมาครบ', (await drawn('report-dots')) === all,
+      `${await drawn('report-dots')} vs ${all}`)
   } else {
-    console.log('      (ข้ามเทสตัวกรอง: ไม่มีหมุดรายงานบนจอ)')
+    console.log(`      (ข้ามเทสตัวกรอง: มีหมุดบนจอ ${all} จุด ต้องการอย่างน้อย 2)`)
   }
 
   // The share button, both ways it can work. On a Thai phone the native sheet

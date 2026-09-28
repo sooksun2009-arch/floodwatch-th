@@ -228,7 +228,7 @@ export default function MapView({
   onError,
   pickMode = false,
   showRadar = false,
-  hidden = EMPTY_SET,
+  selected = EMPTY_SET,
   fitKey = null,
   className = '',
 }) {
@@ -667,23 +667,29 @@ export default function MapView({
     map.setLayoutProperty('radar-layer', 'visibility', showRadar ? 'visible' : 'none')
   }, [showRadar])
 
-  // Hiding a category filters the pins rather than removing the source, so the
-  // data is still there the moment it is switched back on and nothing refetches.
+  // Picking categories shows only those. An empty selection means no choice has
+  // been made, which shows everything — the map should be complete until
+  // someone narrows it, never empty because nothing was ticked.
+  //
+  // Filtering the layer rather than dropping the source keeps the data loaded,
+  // so clearing the filter costs nothing and refetches nothing.
   useEffect(() => {
     const map = mapRef.current
     if (!map || !readyRef.current || !map.getLayer('report-dots')) return
 
-    const hiddenLevels = [...hidden].filter((key) => key in LEVELS)
+    const none = selected.size === 0
+    const levels = [...selected].filter((key) => key in LEVELS)
     map.setFilter(
       'report-dots',
-      hiddenLevels.length ? ['!', ['in', ['get', 'level'], ['literal', hiddenLevels]]] : null,
+      none ? null : ['in', ['get', 'level'], ['literal', levels]],
     )
     for (const [key, layer] of [['cameras', 'camera-dots'], ['stations', 'station-dots']]) {
       if (map.getLayer(layer)) {
-        map.setLayoutProperty(layer, 'visibility', hidden.has(key) ? 'none' : 'visible')
+        map.setLayoutProperty(
+          layer, 'visibility', none || selected.has(key) ? 'visible' : 'none')
       }
     }
-  }, [hidden])
+  }, [selected])
 
   // Push data into the sources whenever it changes, waiting for style load.
   useEffect(() => {

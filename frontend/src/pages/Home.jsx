@@ -93,7 +93,7 @@ function SafetyNotice() {
   )
 }
 
-function Legend({ hidden, onToggle, onReset }) {
+function Legend({ selected, onToggle, onReset }) {
   // On a phone the full key covers a third of the map and sits over marker
   // popups, so it starts collapsed there and expanded on a wider screen.
   const [open, setOpen] = useState(() => {
@@ -109,7 +109,7 @@ function Legend({ hidden, onToggle, onReset }) {
       {open ? (
         <div className="rounded-xl border border-slate-700 bg-slate-950/90 p-2.5 text-xs backdrop-blur">
           <div className="mb-1.5 flex items-center justify-between gap-3">
-            <p className="font-semibold text-slate-300">ระดับน้ำ · กดเพื่อกรอง</p>
+            <p className="font-semibold text-slate-300">ระดับน้ำ · กดเพื่อดูเฉพาะที่เลือก</p>
             <button
               onClick={() => setOpen(false)}
               className="rounded px-1 text-sm leading-none text-slate-500 hover:text-slate-200"
@@ -124,32 +124,37 @@ function Legend({ hidden, onToggle, onReset }) {
               ['cameras', 'กล้อง CCTV', '#0ea5e9'],
               ['stations', 'คลองเฝ้าระวัง/วิกฤติ', SITUATIONS[5].color],
             ].map(([key, label, color]) => {
-              const off = hidden.has(key)
+              const picking = selected.size > 0
+              const on = !picking || selected.has(key)
               return (
                 <li key={key}>
                   <button
                     onClick={() => onToggle(key)}
-                    aria-pressed={!off}
+                    aria-pressed={selected.has(key)}
                     className={`flex w-full items-center gap-2 rounded px-1 py-0.5 text-left transition-colors hover:bg-slate-800 ${
-                      off ? 'text-slate-600' : 'text-slate-300'
+                      selected.has(key)
+                        ? 'bg-slate-800 font-semibold text-white'
+                        : on
+                          ? 'text-slate-300'
+                          : 'text-slate-600'
                     }`}
                   >
                     <span
                       className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-slate-900"
-                      style={{ background: color, opacity: off ? 0.25 : 1 }}
+                      style={{ background: color, opacity: on ? 1 : 0.25 }}
                     />
-                    <span className={off ? 'line-through' : ''}>{label}</span>
+                    <span>{label}</span>
                   </button>
                 </li>
               )
             })}
           </ul>
-          {hidden.size > 0 && (
+          {selected.size > 0 && (
             <button
               onClick={onReset}
               className="mt-1.5 w-full rounded px-1 py-0.5 text-left text-[11px] text-sky-400 hover:bg-slate-800"
             >
-              แสดงทั้งหมดอีกครั้ง ({hidden.size} รายการถูกซ่อน)
+              แสดงเฉพาะ {selected.size} ชนิด · กดเพื่อแสดงทั้งหมด
             </button>
           )}
         </div>
@@ -188,11 +193,12 @@ export default function Home() {
   const [picking, setPicking] = useState(null)
   const [mapCenter, setMapCenter] = useState(null)
   const [radarOn, setRadarOn] = useState(false)
-  // Categories switched off in the legend. Kept here rather than in MapView so
-  // the choice survives the map being re-rendered.
-  const [hidden, setHidden] = useState(() => new Set())
+  // Categories picked in the legend. Empty means no choice made, which shows
+  // everything. Kept here rather than in MapView so the choice survives the
+  // map being re-rendered.
+  const [selected, setSelected] = useState(() => new Set())
   const toggleCategory = useCallback((key) => {
-    setHidden((current) => {
+    setSelected((current) => {
       const next = new Set(current)
       if (next.has(key)) next.delete(key)
       else next.add(key)
@@ -335,16 +341,16 @@ export default function Home() {
               onMapClick={onMapClick}
               onCenterChange={setMapCenter}
               showRadar={radarOn}
-              hidden={hidden}
+              selected={selected}
               onError={setMapError}
               pickMode={Boolean(picking)}
               fitKey={fitKey}
             />
           </Suspense>
           <Legend
-            hidden={hidden}
+            selected={selected}
             onToggle={toggleCategory}
-            onReset={() => setHidden(new Set())}
+            onReset={() => setSelected(new Set())}
           />
           {mapError && (
             <div className="absolute inset-x-3 top-3 z-20 rounded-xl border border-red-800 bg-red-950/90 px-3 py-2 text-sm text-red-200 backdrop-blur">

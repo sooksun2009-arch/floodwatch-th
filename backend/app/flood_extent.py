@@ -308,7 +308,9 @@ async def all_rings(product: str | None = None) -> list:
     async def fetch():
         feature_budget().spend("ข้อมูลพื้นที่น้ำท่วม")
         async with _client() as client:
-            response = await client.get(FEATURES_PATH.format(product=chosen))
+            response = await client.get(
+                FEATURES_PATH.format(product=chosen),
+                params={"limit": settings.gistda_features_limit})
             response.raise_for_status()
             size_mb = len(response.content) / 1_048_576
             if size_mb > settings.gistda_max_download_mb:
@@ -323,6 +325,17 @@ async def all_rings(product: str | None = None) -> list:
         for feature in (payload or {}).get("features") or []:
             rings.extend(_rings(feature.get("geometry")))
         logger.info("โหลดพื้นที่น้ำท่วมจากดาวเทียม %.1f MB %d รูป", size_mb, len(rings))
+        # A count that lands exactly on the limit means the feed stopped there,
+        # not that the country did. Recorded rather than guessed at, because
+        # the first version of this read ten outlines for all of Thailand and
+        # looked exactly like a quiet week.
+        features = len((payload or {}).get("features") or [])
+        if features >= settings.gistda_features_limit:
+            LAST_FAILURE["features_truncated"] = (
+                f"ได้มา {features} รายการ ซึ่งชนเพดานที่ขอไว้พอดี "
+                f"— แปลว่าน่าจะมีมากกว่านี้ที่ยังไม่ได้ดึง")
+        else:
+            LAST_FAILURE.pop("features_truncated", None)
         return rings
 
     try:

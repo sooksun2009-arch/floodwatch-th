@@ -258,6 +258,11 @@ class Settings(BaseSettings):
     # the data. Tighter than the rain corridor (4 km) because this is water on
     # the ground, and a field flooded a kilometre away says nothing about a road.
     gistda_route_corridor_km: float = 0.3
+    # How many flood areas to ask for in one request. The Swagger lists no
+    # parameters, but the feed returned exactly ten outlines for the whole
+    # country -- which is the OGC default page size, not a dry country. Asking
+    # explicitly is the difference between the first page and the data.
+    gistda_features_limit: int = 5000
 
     # Shared secret for POST /api/stations/bma/ingest. The Bangkok drainage
     # site refuses connections from outside Thailand, so the container cannot

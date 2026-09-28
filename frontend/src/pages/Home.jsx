@@ -511,6 +511,21 @@ export default function Home() {
           }}
         />
 
+        {/* Outside the collapsible panel on purpose: someone who wants to
+            ask about commissioning work should not have to open "sources and
+            limitations" to find out a person made this. */}
+        <p className="mt-4 px-1 text-xs text-slate-500">
+          พัฒนาโดย <span className="font-semibold text-slate-300">Sooksun</span>
+          {' · '}
+          รับเขียนเว็บและระบบภายในองค์กร{' '}
+          <a
+            className="font-medium text-sky-400 underline decoration-sky-700 underline-offset-2 hover:text-sky-300"
+            href="mailto:sooksun2009@gmail.com?subject=สนใจจ้างเขียนระบบ (จาก FloodWatch TH)"
+          >
+            sooksun2009@gmail.com
+          </a>
+        </p>
+
         <details className="card mt-4 p-4 text-xs leading-relaxed text-slate-400">
           <summary className="cursor-pointer font-semibold text-slate-300">
             แหล่งข้อมูล ข้อจำกัด และความเป็นส่วนตัว

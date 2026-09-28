@@ -75,7 +75,10 @@ def _parse_thai_datetime(text: str) -> datetime | None:
     if year > 2400:
         year -= 543  # พ.ศ. -> ค.ศ.
     try:
-        return datetime(year, month, day, hour, minute, tzinfo=BANGKOK_TZ)
+        # UTC, not merely labelled Bangkok: see stations._parse_dt — a database
+        # that drops the offset turns a Bangkok time into one seven hours ahead.
+        return datetime(year, month, day, hour, minute,
+                        tzinfo=BANGKOK_TZ).astimezone(timezone.utc)
     except ValueError:
         return None
 

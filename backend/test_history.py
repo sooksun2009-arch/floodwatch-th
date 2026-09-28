@@ -16,7 +16,7 @@ os.environ["GEOCODE_ENABLED"] = "false"
 os.environ["SYNC_STATIONS_ON_START"] = "false"
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi.testclient import TestClient
@@ -116,8 +116,10 @@ check("แปลงค่าที่มาเป็นข้อความไ�
 check("เรียงเก่า→ใหม่", [p.value for p in points] == [0.50, 0.62, 0.70],
       [p.value for p in points])
 check("จุดสุดท้ายคือค่าที่มีจริง ไม่ใช่ช่องว่างล่าสุด", points[-1].value == 0.70)
-check("ตีความเวลาเป็นเวลาไทย", points[0].at.utcoffset() == timedelta(hours=7),
-      points[0].at)
+# "2026-09-27 12:00" upstream is Bangkok time; stored and compared as UTC so a
+# database that drops the offset cannot make a reading look newer than it is.
+check("12:00 ไทย = 05:00 UTC",
+      points[0].at == datetime(2026, 9, 27, 5, 0, tzinfo=timezone.utc), points[0].at)
 
 check("ส่ง station_type ทุกครั้ง (ไม่ส่งแล้วต้นทางตอบ 500)",
       captured["params"].get("station_type") == "tele_waterlevel", captured["params"])

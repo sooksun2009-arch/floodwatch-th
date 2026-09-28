@@ -51,11 +51,22 @@ def _as_float(value) -> float | None:
 
 
 def _parse_dt(text: str | None) -> datetime | None:
+    """Upstream's Bangkok wall-clock time, returned as UTC.
+
+    Converted rather than merely labelled, because not every database keeps the
+    offset. SQLite drops it, and everything that reads the column back assumes
+    a naive value is UTC — so a Bangkok time stored naive comes back seven
+    hours in the future, and a reading twelve hours old reports itself as five.
+    That is under the staleness threshold, which means a dead gauge was
+    displayed as current. Storing UTC makes that assumption true instead of
+    hoping the column keeps its offset.
+    """
     if not text:
         return None
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
         try:
-            return datetime.strptime(text, fmt).replace(tzinfo=BANGKOK_TZ)
+            parsed = datetime.strptime(text, fmt).replace(tzinfo=BANGKOK_TZ)
+            return parsed.astimezone(timezone.utc)
         except ValueError:
             continue
     return None
@@ -214,6 +225,13 @@ async def sync(db: Session) -> dict:
             "total": len(records), "synced_at": utcnow()}
 
 
+# Outcome of the most recent sync, per source, so an operator can see why a
+# source is missing without shell access to the running container. In memory
+# rather than a table: it is answered by the next sync anyway, and the boot
+# sync fills it within seconds of a restart.
+LAST_SYNC: dict[str, dict] = {}
+
+
 async def sync_all(db: Session) -> dict:
     """Refresh every gauge source. One failing source must not stop the others."""
     from . import bma_stations
@@ -221,6 +239,18 @@ async def sync_all(db: Session) -> dict:
     results = {"thaiwater": await sync(db)}
     if settings.sync_bma_on_start:
         results["bma"] = await bma_stations.sync(db)
+
+    now = utcnow()
+    for name, outcome in results.items():
+        LAST_SYNC[name] = {
+            "ok": bool(outcome.get("ok")),
+            "at": now,
+            "created": outcome.get("created", 0),
+            "updated": outcome.get("updated", 0),
+            # Present only on failure, and it describes an outbound connection
+            # of ours — nothing about a visitor.
+            "error": None if outcome.get("ok") else outcome.get("error"),
+        }
     return results
 
 

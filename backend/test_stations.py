@@ -24,9 +24,17 @@ def check(name, cond, extra=""):
     print(("PASS  " if cond else "FAIL  ") + name + ("" if cond else f"\n      -> {extra}"))
     if not cond: fails.append(name)
 
+# Freshness is measured against the clock, so the fixture's timestamp has to
+# move with it. A hardcoded date passes on the day it is written and starts
+# failing the next morning, which is a test reporting the calendar rather than
+# the code — and it did exactly that.
+from datetime import datetime, timedelta, timezone
+
+_RECENT = (datetime.now(timezone(timedelta(hours=7))) - timedelta(minutes=20))     .strftime("%Y-%m-%d %H:%M")
+
 # A record shaped exactly like the live API returns.
 SAMPLE = {
-    "id": 1313736250, "waterlevel_datetime": "2026-09-27 10:10",
+    "id": 1313736250, "waterlevel_datetime": _RECENT,
     "waterlevel_msl": "2.76", "situation_level": 5,
     "diff_wl_bank": "0.56", "diff_wl_bank_text": "ล้นตลิ่ง (ม.)",
     "agency": {"agency_shortname": {"th": "สสน.", "en": "HII"}},
@@ -46,9 +54,14 @@ check("diff is positive when over bank", r["diff_from_bank"] == 0.56, r["diff_fr
 check("province/amphoe", r["province_name"] == "กรุงเทพมหานคร" and r["amphoe_name"] == "บางเขน")
 check("agency for attribution", r["agency"] == "สสน.", r["agency"])
 check("min_bank used as bank level", r["bank_level"] == 2.2, r["bank_level"])
-check("measured_at parsed as Bangkok time",
-      r["measured_at"] is not None and r["measured_at"].utcoffset().total_seconds() == 7*3600,
-      r["measured_at"])
+# The instant, not the label. Asserting the offset was +07:00 only proved the
+# value was tagged Bangkok, which is what let a Bangkok time get stored naive
+# and read back as UTC — seven hours in the future.
+_fixed = normalise(dict(SAMPLE, waterlevel_datetime="2026-09-27 10:10"))["measured_at"]
+check("เวลาที่วัด = ช่วงเวลาที่ถูกต้อง (10:10 ไทย = 03:10 UTC)",
+      _fixed == datetime(2026, 9, 27, 3, 10, tzinfo=timezone.utc), _fixed)
+check("เก็บเป็น UTC เพื่อให้ฐานข้อมูลที่ตัด timezone ทิ้งยังอ่านถูก",
+      _fixed.utcoffset().total_seconds() == 0, _fixed)
 
 # Below-bank readings must come out negative so a single comparison works.
 # The reading has to match the claim: bank 2.2, water at 1.17 -> 1.03 m below.
@@ -87,6 +100,18 @@ with TestClient(app) as c:
     check("situation label in thai", st["situation_label"] == "วิกฤต น้ำล้นตลิ่ง", st["situation_label"])
     check("freshness computed", "is_stale" in st and st["is_stale"] is False, st.get("is_stale"))
 
+    # And the other direction, so "not stale" is a result rather than the only
+    # answer the code can give.
+    _old = dict(SAMPLE, waterlevel_datetime=(
+        datetime.now(timezone(timedelta(hours=7))) - timedelta(hours=12)
+    ).strftime("%Y-%m-%d %H:%M"))
+    _db = SessionLocal()
+    upsert(_db, [normalise(_old)])
+    _db.close()
+    st2 = c.get("/api/stations").json()[0]
+    check("ค่าที่เก่าเกินเกณฑ์ -> ถูกทำเครื่องหมายว่าค้าง", st2["is_stale"] is True,
+          st2.get("is_stale"))
+
     r = c.get("/api/stations?overflowing_only=true")
     check("filter overflowing", r.status_code == 200 and len(r.json()) == 1, r.text[:150])
 
@@ -111,7 +136,7 @@ with TestClient(app) as c:
 # "over the bank by <height above sea level>". These must never reach the map.
 print()
 UNSET_BANK = {
-    "id": 9, "waterlevel_datetime": "2026-09-27 10:10",
+    "id": 9, "waterlevel_datetime": _RECENT,
     "waterlevel_msl": "331.70", "situation_level": None,
     "diff_wl_bank": "331.70", "diff_wl_bank_text": "ล้นตลิ่ง (ม.)",
     "station": {"id": 999, "tele_station_name": {"th": "ฝายละแอ"},
@@ -158,6 +183,38 @@ ok = normalise(SAMPLE)
 check("normal station unaffected",
       ok["is_overflowing"] is True and ok["diff_from_bank"] == 0.56 and ok["bank_level"] == 2.2,
       (ok["is_overflowing"], ok["diff_from_bank"], ok["bank_level"]))
+
+# ---------------------------------------------------------------- sync status
+# Bangkok's gauges were missing from production for days and the only record of
+# why was a log line unreachable from outside the container.
+import asyncio
+
+import app.stations as stations_mod
+
+stations_mod.LAST_SYNC.clear()
+
+
+async def _fake_sync(db):
+    return {"ok": False, "error": "ConnectError <- gaierror(name not resolved)",
+            "created": 0, "updated": 0}
+
+
+real_sync, real_bma = stations_mod.sync, None
+import app.bma_stations as bmamod
+real_bma = bmamod.sync
+stations_mod.sync = _fake_sync
+bmamod.sync = _fake_sync
+try:
+    asyncio.run(stations_mod.sync_all(None))
+finally:
+    stations_mod.sync, bmamod.sync = real_sync, real_bma
+
+check("บันทึกผลซิงก์ของทุกแหล่ง", set(stations_mod.LAST_SYNC) >= {"thaiwater"}, list(stations_mod.LAST_SYNC))
+entry = stations_mod.LAST_SYNC["thaiwater"]
+check("แหล่งที่ล้ม -> ok=False", entry["ok"] is False, entry)
+check("และเก็บสาเหตุที่อ่านรู้เรื่องไว้ด้วย", "gaierror" in (entry["error"] or ""), entry)
+check("มีเวลาที่ซิงก์ล่าสุด", entry.get("at") is not None, entry)
+stations_mod.LAST_SYNC.clear()
 
 print()
 print("=" * 60)

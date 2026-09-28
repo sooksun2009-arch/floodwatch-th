@@ -42,10 +42,15 @@ check("ระดับน้ำติดลบอ่านได้", rows[0]["w
 check("สถานะ", rows[1]["status"] == "วิกฤติ", rows[1]["status"])
 check("สถานีขัดข้องไม่มีตัวเลข", rows[2]["water_level_msl"] is None, rows[2]["water_level_msl"])
 
-# พ.ศ. 2569 must become ค.ศ. 2026, in Thai local time.
+# พ.ศ. 2569 must become ค.ศ. 2026, read as Thai local time and stored as UTC.
+from datetime import datetime as _dt, timezone as _tz
+
 dt = _parse_thai_datetime("27/09/2569 15:20")
-check("แปลง พ.ศ. เป็น ค.ศ.", dt is not None and dt.year == 2026 and dt.month == 9 and dt.day == 27, dt)
-check("เวลาเป็นเขตเวลาไทย", dt.utcoffset().total_seconds() == 7 * 3600, dt.utcoffset())
+check("แปลง พ.ศ. เป็น ค.ศ.", dt is not None and dt.year == 2026 and dt.month == 9, dt)
+# The instant, not the label: a value merely tagged +07:00 becomes seven hours
+# in the future once a database drops the offset, which showed a twelve-hour-old
+# gauge reading as current.
+check("15:20 ไทย = 08:20 UTC", dt == _dt(2026, 9, 27, 8, 20, tzinfo=_tz.utc), dt)
 check("วันที่ผิดรูปแบบคืน None", _parse_thai_datetime("ไม่มีข้อมูล") is None)
 
 DETAIL = """

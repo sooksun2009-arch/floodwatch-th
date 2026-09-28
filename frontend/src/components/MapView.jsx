@@ -19,7 +19,9 @@ import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&ur
 
 setWorkerUrl(maplibreWorkerUrl)
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { LEVELS, SITUATIONS, api, levelLabel, safePhotoUrl, timeAgo } from '../api'
+import {
+  LEVELS, SITUATIONS, api, levelLabel, reportAge, safePhotoUrl, timeAgo,
+} from '../api'
 
 // Raster OpenStreetMap tiles need no API key, which keeps the app free to run.
 // For production traffic, point VITE_MAP_STYLE at a tile provider you have an
@@ -72,6 +74,7 @@ const reportsToGeoJSON = (reports) => ({
       confirms: r.confirm_count ?? 0,
       disputes: r.dispute_count ?? 0,
       age: timeAgo(r.age_minutes),
+      ageMinutes: r.age_minutes ?? '',
       source: r.source,
       photo: r.photo_url || '',
       critical: r.level === 'severe' || r.level === 'closed' ? 1 : 0,
@@ -408,12 +411,22 @@ export default function MapView({
 
       line(props.place, 'font-weight:700;margin-bottom:.15rem')
       line(props.label, `color:${LEVELS[props.level]?.color || '#94a3b8'};font-weight:600`)
+
+      // Directly under the level rather than last and dimmest. On a road that
+      // changes within the hour, how old the report is decides whether the
+      // level above it still means anything — a reader put it better than I
+      // would: knowing when it came in is what makes them willing to drive.
+      const age = props.ageMinutes === '' ? null : reportAge(Number(props.ageMinutes))
+      if (age) {
+        line(age.text, `color:${age.color};font-weight:600;margin-top:.1rem`)
+        if (age.note) line(age.note, `color:${age.color};opacity:.85;font-size:12px`)
+      }
+
       if (props.depth) line(`วัดได้ ${props.depth} ซม.`, 'color:#94a3b8')
       const counts = document.createElement('div')
       counts.textContent = `ยืนยัน ${props.confirms} · แย้ง ${props.disputes}`
       counts.style.cssText = 'color:#94a3b8'
       root.appendChild(counts)
-      line(props.age, 'color:#64748b;margin-top:.25rem')
 
       // Only same-origin upload paths are rendered; an absolute URL from a
       // report could otherwise point anywhere, including a javascript: scheme.

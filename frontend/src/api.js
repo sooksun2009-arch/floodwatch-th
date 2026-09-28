@@ -245,6 +245,34 @@ export const parseCoords = (text) => {
   return null
 }
 
+/**
+ * How a report's age should read on screen.
+ *
+ * From a user: "จุดน้ำท่วมมันเปลี่ยนกันเป็นชั่วโมง ถ้าหมุดบอกด้วยว่ารายงานเข้ามา
+ * เมื่อไหร่ คนดูจะกล้าตัดสินใจออกรถกว่าเยอะ" — the age is not a footnote, it is
+ * most of what makes the rest of the pin worth acting on. Water moves in about
+ * an hour, so these bands are in hours, and an old pin says so in a colour
+ * rather than leaving someone to do the arithmetic and hope.
+ *
+ * The oldest band asks for a vote instead of only warning, because the person
+ * reading it is usually standing where the answer is.
+ */
+export const reportAge = (minutes) => {
+  if (minutes == null) return null
+  const ago = timeAgo(minutes)
+  if (minutes < 45) {
+    return { text: `แจ้งเมื่อ ${ago}`, color: '#34d399', note: null }
+  }
+  if (minutes < 150) {
+    return { text: `แจ้งเมื่อ ${ago}`, color: '#fbbf24', note: 'สถานการณ์อาจเปลี่ยนแล้ว' }
+  }
+  return {
+    text: `แจ้งเมื่อ ${ago}`,
+    color: '#f87171',
+    note: 'นานแล้ว — ถ้าคุณอยู่แถวนั้น ช่วยกดยืนยันหน่อยครับ',
+  }
+}
+
 export const timeAgo = (minutes) => {
   if (minutes == null) return ''
   if (minutes < 1) return 'เมื่อสักครู่'

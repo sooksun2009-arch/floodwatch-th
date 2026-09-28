@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import {
-  api, ApiError, LEVELS, SITUATIONS, VERDICTS, levelLabel, safePhotoUrl, timeAgo,
+  api, ApiError, LEVELS, SITUATIONS, VERDICTS, levelLabel, reportAge, safePhotoUrl,
+  timeAgo,
 } from '../api'
 
 // One endpoint input: type a name, use GPS, or drop a pin on the map.
@@ -334,13 +335,29 @@ function ObstacleList({ obstacles, onVote, votedIds }) {
                     {report.level_label || levelLabel(report.level)}
                     {report.depth_cm ? ` · วัดได้ ${report.depth_cm} ซม.` : ''}
                   </p>
+                  {/* Right under the level, and coloured: on a road that can
+                      change within the hour, the age is what says whether the
+                      line above it is still true. */}
+                  {(() => {
+                    const age = reportAge(report.age_minutes)
+                    if (!age) return null
+                    return (
+                      <p className="mt-0.5 text-sm font-semibold" style={{ color: age.color }}>
+                        {age.text}
+                        {age.note && (
+                          <span className="ml-1 text-xs font-normal opacity-85">
+                            · {age.note}
+                          </span>
+                        )}
+                      </p>
+                    )
+                  })()}
                   {report.description && (
                     <p className="mt-1 text-sm leading-relaxed text-slate-400">
                       {report.description}
                     </p>
                   )}
                   <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
-                    <span>{timeAgo(report.age_minutes)}</span>
                     <span>ห่างเส้นทาง {distance_from_route_m} ม.</span>
                     <span>ยืนยัน {report.confirm_count} · แย้ง {report.dispute_count}</span>
                     {report.source === 'official' && (

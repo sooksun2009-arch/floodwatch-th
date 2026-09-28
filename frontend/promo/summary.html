@@ -1,0 +1,173 @@
+<!doctype html>
+<!-- รูปสรุปฟีเจอร์ไว้โพสต์ — เรนเดอร์เป็น PNG ด้วย tools/capture-summary.cjs
+     ตัวเลขในนี้เป็นค่าคงที่ ณ วันถ่าย จงใจกำกับวันที่ไว้ข้าง ๆ เพราะรูปที่ถูกแชร์
+     ต่อไปอีกหลายสัปดาห์ไม่ควรอ้างตัวเลขเก่าเหมือนเป็นของสด -->
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1080px; height: 1350px; overflow: hidden;
+    font-family: "IBM Plex Sans Thai", system-ui, sans-serif;
+    background:
+      radial-gradient(900px 500px at 82% -6%, rgba(56,189,248,.22), transparent 60%),
+      radial-gradient(700px 500px at -10% 105%, rgba(249,115,22,.14), transparent 60%),
+      #070c17;
+    color: #e2e8f0;
+    padding: 50px 56px 42px;
+    display: flex; flex-direction: column;
+  }
+
+  header { display: flex; align-items: center; gap: 16px; }
+  .mark {
+    width: 62px; height: 62px; border-radius: 18px; flex: none;
+    background: linear-gradient(145deg, #0ea5e9, #4f46e5);
+    display: grid; place-items: center;
+    box-shadow: 0 10px 30px rgba(14,165,233,.35);
+  }
+  .brand { font-size: 37px; font-weight: 700; letter-spacing: -.5px; line-height: 1.1; }
+  .brand span { color: #38bdf8; }
+  .tag { font-size: 18.5px; color: #94a3b8; margin-top: 3px; }
+  .free {
+    margin-left: auto; text-align: right; font-size: 16px; font-weight: 600;
+    color: #5eead4; line-height: 1.5;
+  }
+
+  h1 {
+    margin-top: 30px;
+    font-size: 56px; font-weight: 700; line-height: 1.2; letter-spacing: -1px;
+  }
+  h1 em { font-style: normal; color: #38bdf8; }
+  .sub { margin-top: 11px; font-size: 21px; color: #94a3b8; line-height: 1.5; }
+
+  .body { display: flex; gap: 38px; margin-top: 30px; flex: 1; min-height: 0; }
+
+  /* space-between แทน gap คงที่ เพราะตอนแรกรายการกองอยู่ข้างบน
+     แล้วเหลือที่ว่างเปล่า ๆ ใต้รายการเกือบ 300px */
+  ul {
+    list-style: none; display: flex; flex-direction: column;
+    justify-content: space-between; flex: 1;
+  }
+  li { display: flex; gap: 15px; align-items: flex-start; }
+  .ico {
+    width: 42px; height: 42px; border-radius: 13px; flex: none; margin-top: 2px;
+    display: grid; place-items: center;
+    background: rgba(148,163,184,.10); border: 1px solid rgba(148,163,184,.18);
+  }
+  .ttl { font-size: 21.5px; font-weight: 600; line-height: 1.3; }
+  .dsc { font-size: 17px; color: #94a3b8; line-height: 1.45; margin-top: 3px; }
+
+  /* ยืดเต็มความสูงคอลัมน์และครอปจากด้านบน ตอนแรกปล่อยให้สูงตามภาพ
+     ทำให้จอเล็กจนตัวหนังสือในจออ่านไม่ออก ซึ่งทำให้รูปหน้าจอไม่มีประโยชน์ */
+  .phone {
+    width: 330px; flex: none; border-radius: 36px; overflow: hidden;
+    border: 8px solid #1e293b; background: #0f172a;
+    box-shadow: 0 26px 60px rgba(0,0,0,.6);
+    align-self: stretch;
+  }
+  .phone img {
+    display: block; width: 100%; height: 100%;
+    object-fit: cover; object-position: top center;
+  }
+
+  .stats {
+    margin-top: 24px; display: flex; align-items: center; gap: 30px;
+    padding: 17px 26px; border-radius: 18px;
+    background: rgba(15,23,42,.72); border: 1px solid rgba(51,65,85,.9);
+  }
+  .stat b { display: block; font-size: 31px; font-weight: 700; line-height: 1.1; }
+  .stat span { font-size: 15px; color: #94a3b8; }
+  .asof { margin-left: auto; font-size: 14px; color: #64748b; text-align: right; line-height: 1.5; }
+
+  .note {
+    margin-top: 15px; padding: 15px 22px; border-radius: 16px;
+    background: rgba(120,53,15,.28); border: 1px solid rgba(180,83,9,.55);
+    font-size: 16.5px; line-height: 1.55; color: #fed7aa;
+  }
+  .note b { color: #fdba74; }
+
+  footer { margin-top: 19px; display: flex; align-items: center; gap: 16px; }
+  .url { font-size: 29px; font-weight: 700; color: #fff; letter-spacing: -.3px; }
+  .hot { margin-left: auto; font-size: 16.5px; color: #94a3b8; }
+  .hot b { color: #fbbf24; font-size: 20px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="mark">
+    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2 14.5c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2"/>
+      <path d="M2 19.5c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2"/>
+      <path d="M12 3v7M9 6l3-3 3 3"/>
+    </svg>
+  </div>
+  <div>
+    <div class="brand">FloodWatch <span>TH</span></div>
+    <div class="tag">แผนที่น้ำท่วม สำหรับคนที่ยังไงก็ต้องออกจากบ้าน</div>
+  </div>
+  <div class="free">ใช้ฟรี · ไม่ต้องสมัคร<br>ไม่มีโฆษณา</div>
+</header>
+
+<h1>จะไปไหน <em>เช็คก่อนออกรถ</em></h1>
+<div class="sub">ใส่ต้นทาง–ปลายทาง แล้วดูว่าเส้นทางนั้นมีใครแจ้งน้ำท่วมไว้หรือยัง</div>
+
+<div class="body">
+  <ul>
+    <li>
+      <div class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="3"/><circle cx="18" cy="5" r="3"/><path d="M9 19h6a4 4 0 0 0 0-8H9a4 4 0 0 1 0-8h3"/></svg></div>
+      <div><div class="ttl">เช็คเส้นทาง A → B</div>
+      <div class="dsc">บอกตรง ๆ ว่าไปได้หรือไม่ พร้อมระยะทางและเวลา</div></div>
+    </li>
+    <li>
+      <div class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></div>
+      <div><div class="ttl">หาทางเลี่ยงให้อัตโนมัติ</div>
+      <div class="dsc">ถ้าเส้นหลักมีจุดท่วม ระบบจะลองหาเส้นอ้อมให้</div></div>
+    </li>
+    <li>
+      <div class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fb923c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.6"/></svg></div>
+      <div><div class="ttl">รายงานจากคนที่ขับผ่านจริง</div>
+      <div class="dsc">แจ้งได้ใน 30 วินาที ต้องแนบรูป — รูปคือหลักฐาน</div></div>
+    </li>
+    <li>
+      <div class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 3 4-6 5 4"/><path d="M3 21h18"/></svg></div>
+      <div><div class="ttl">804 สถานีวัดระดับน้ำ</div>
+      <div class="dsc">ข้อมูล ThaiWater อัปเดตทุกชั่วโมง ดูแนวโน้มขึ้น–ลงได้</div></div>
+    </li>
+    <li>
+      <div class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 9.5A5.5 5.5 0 0 0 7.2 8 4 4 0 0 0 7 16h10.5a3.5 3.5 0 0 0 .5-6.5z"/><path d="M9 19l-1 2M13 19l-1 2M17 19l-1 2"/></svg></div>
+      <div><div class="ttl">เรดาร์ฝน</div>
+      <div class="dsc">เปิดดูกลุ่มฝนที่กำลังเคลื่อนเข้าหาเส้นทางของคุณ</div></div>
+    </li>
+    <li>
+      <div class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#f0abfc" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 1 1-3.1-6.3"/><path d="M21 4v5h-5"/><path d="M8 11h8M8 15h5"/></svg></div>
+      <div><div class="ttl">พิมพ์ถามเป็นภาษาไทยได้</div>
+      <div class="dsc">เช่น “แถวบางนาท่วมไหม” แล้วมันตอบจากรายงานที่มีอยู่</div></div>
+    </li>
+  </ul>
+
+  <div class="phone"><img src="4-บนมือถือ.png" alt=""></div>
+</div>
+
+<div class="stats">
+  <div class="stat"><b>804</b><span>สถานีวัดน้ำ</span></div>
+  <div class="stat"><b style="color:#fca5a5">78</b><span>จุดน้ำล้นตลิ่ง</span></div>
+  <div class="stat"><b style="color:#fbbf24">7</b><span>รายงานใน 24 ชม.</span></div>
+  <div class="asof">ตัวเลข ณ 28 ก.ย. 2569<br>ของจริงดูในเว็บ อัปเดตตลอดเวลา</div>
+</div>
+
+<div class="note">
+  <b>อ่านก่อนใช้:</b> แอปนี้ทำโดยบุคคลทั่วไป ไม่ใช่หน่วยงานราชการ และไม่ใช่ช่องทางขอความช่วยเหลือ · คำว่า “ไม่พบรายงาน” แปลว่า<b>ยังไม่มีใครแจ้ง</b> ไม่ใช่การยืนยันว่าถนนแห้ง
+</div>
+
+<footer>
+  <div class="url">floodwatch-th.onrender.com</div>
+  <div class="hot">เหตุด่วน โทร <b>1784</b> · ในกรุงเทพฯ <b>1555</b></div>
+</footer>
+
+</body>
+</html>

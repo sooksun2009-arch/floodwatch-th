@@ -309,6 +309,26 @@ check("และลองค่าที่เล็กลงจริง ไม
 check("ไม่มีความล้มเหลวค้างไว้ เพราะสุดท้ายสำเร็จ",
       "features" not in fe.LAST_FAILURE, fe.LAST_FAILURE)
 
+# The real feed is about 25 MB, over the ceiling that protects a 512 MB
+# instance. Asking for a smaller page is the answer; refusing outright left
+# the layer loading nothing at all for a deploy.
+reset()
+sizes = []
+
+
+def bulky(request):
+    limit = int(dict(request.url.params).get("limit", 0))
+    sizes.append(limit)
+    big = limit > 8000
+    return serve_features(features([SQUARE]),
+                          size=int((settings.gistda_max_download_mb + 2) * 1024 * 1024)
+                          if big else 0)(request)
+
+
+rings = with_upstream(bulky, fe.all_rings)
+check("ชุดเต็มใหญ่เกินเพดาน -> ขอชุดเล็กลงแทนที่จะยอมแพ้", len(rings) == 1, rings)
+check("และไล่ขนาดลงจริง", len(sizes) >= 2 and sizes[0] > sizes[-1], sizes)
+
 reset()
 check("รวมรูปจาก 2 แหล่งเข้าด้วยกันได้",
       len(routing._merge_polygons(

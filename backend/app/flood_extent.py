@@ -314,20 +314,28 @@ async def all_rings(product: str | None = None) -> list:
         ]
         async with _client() as client:
             response = None
+            size_mb = 0.0
             for limit in wanted:
                 response = await client.get(
                     FEATURES_PATH.format(product=chosen), params={"limit": limit})
-                if response.status_code != 400 or "limit" not in (response.text or ""):
-                    break
-                logger.info("GISTDA ปฏิเสธ limit=%s ลองค่าที่เล็กลง", limit)
+                if response.status_code == 400 and "limit" in (response.text or ""):
+                    logger.info("GISTDA ปฏิเสธ limit=%s ลองค่าที่เล็กลง", limit)
+                    continue
+                size_mb = len(response.content) / 1_048_576
+                if size_mb > settings.gistda_max_download_mb:
+                    # Not raised: asked again for less. The whole feed is about
+                    # 25 MB, and parsing that on a 512 MB instance risks ending
+                    # the process -- which would take the flood map down to
+                    # improve a layer beside it. A smaller page that loads beats
+                    # a complete one that does not, and the truncation warning
+                    # below says which happened.
+                    logger.info("GISTDA ชุดเต็ม %.1f MB เกินเพดาน ลอง limit เล็กลง", size_mb)
+                    continue
+                break
             response.raise_for_status()
-            size_mb = len(response.content) / 1_048_576
             if size_mb > settings.gistda_max_download_mb:
-                # Refused rather than parsed. This runs on a small instance and
-                # an unbounded download is the kind of improvement that takes
-                # the flood map down.
                 raise ValueError(
-                    f"ข้อมูลใหญ่เกินเพดาน ({size_mb:.1f} MB เกิน "
+                    f"ข้อมูลใหญ่เกินเพดานทุกขนาดที่ลอง ({size_mb:.1f} MB เกิน "
                     f"{settings.gistda_max_download_mb} MB)")
             payload = response.json()
         # Coarsened here, as each outline is read, rather than kept at full

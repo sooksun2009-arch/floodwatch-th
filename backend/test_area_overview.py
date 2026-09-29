@@ -98,7 +98,8 @@ with TestClient(app) as c:
                                 measured_at=utcnow()))
         db.commit()
     _, rows = fresh(c)
-    check("ล้นตลิ่ง 3 จุดขึ้นไป -> อันตราย", rows[quiet]["status"] == "danger", rows[quiet])
+    check("ล้นตลิ่งหลายจุดแต่ไม่มีใครแจ้งว่าผ่านไม่ได้ -> เฝ้าระวัง ไม่ใช่อันตราย",
+          rows[quiet]["status"] == "watch", rows[quiet])
 
 print()
 print("=" * 60)

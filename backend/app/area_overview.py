@@ -9,7 +9,10 @@ Status is deliberately coarse. Three words someone can act on beat a score
 they have to interpret:
 
   danger  -- a report says a car cannot get through (severe / closed /
-             impassable), or three or more gauges are over their banks
+             impassable). Only people on the road can say that: a river over
+             its bank is a warning, not a closed road, and the first version
+             called twelve provinces "danger" on gauges alone -- most of them
+             without a single report.
   watch   -- any flood report, any gauge over its bank, or rain falling on a
              traffic camera right now
   normal  -- none of the above, from the sources we have
@@ -31,7 +34,6 @@ CACHE_SEC = 90
 _cache: dict = {"at": 0.0, "value": None}
 
 DANGER_LEVELS = ("severe", "closed")
-DANGER_OVERFLOWING = 3
 
 
 def norm(name: str | None) -> str:
@@ -45,8 +47,7 @@ def norm(name: str | None) -> str:
 
 
 def status_of(row: dict) -> str:
-    if (row["worst_level"] in DANGER_LEVELS or row["impassable"] > 0
-            or row["overflowing"] >= DANGER_OVERFLOWING):
+    if row["worst_level"] in DANGER_LEVELS or row["impassable"] > 0:
         return "danger"
     if row["reports"] > 0 or row["overflowing"] > 0 or (row["raining"] or 0) > 0:
         return "watch"

@@ -214,6 +214,47 @@ check("จุดที่ความมั่นใจต่ำ ไม่นั
 check("จุดที่แค่เสี่ยง ไม่นับว่าผ่านไม่ได้",
       routing._blocked_at_an_end(FakeAnalysis(20, [road_at(0.04, sedan="risky")])) is None)
 
+# ------------------------------------------------- one fact, one explanation
+# With water at the doorstep, "no way round the flooding" is true but is not
+# the reason, and stacking both reads as the app arguing with itself.
+from datetime import timedelta
+
+from app.database import SessionLocal, engine
+from app.models import Base, FloodReport, utcnow
+
+Base.metadata.create_all(engine)
+settings.ors_api_key = "test-key"
+
+with SessionLocal() as db:
+    db.add(FloodReport(lat=13.70, lng=100.60, place="ตรงต้นทาง", level="closed", depth_cm=70,
+                       status="approved", expires_at=utcnow() + timedelta(hours=6)))
+    # Exactly half way along the straight line below, so it lands inside the
+    # corridor rather than merely near it.
+    db.add(FloodReport(lat=13.69, lng=100.605, place="กลางทาง", level="closed", depth_cm=70,
+                       status="approved", expires_at=utcnow() + timedelta(hours=6)))
+    db.commit()
+
+    async def no_route(origin, dest, avoid):
+        routing.LAST_ORS_FAILURE = routing.ORS_CODE_TH[2009]
+        return None
+
+    real_ors = routing._ors_route
+    routing._ors_route = no_route
+    at_door = asyncio.run(routing.check_route(db, (13.70, 100.60), (13.78, 100.66)))
+    mid_way = asyncio.run(routing.check_route(db, (13.60, 100.55), (13.78, 100.66)))
+    routing._ors_route = real_ors
+
+door_text = at_door["degraded"] or ""
+mid_text = mid_way["degraded"] or ""
+check("ติดที่ต้นทาง -> บอกว่าติดตรงต้นทาง", "อยู่ตรงต้นทาง" in door_text, door_text)
+check("ติดที่ต้นทาง -> ไม่พ่วงเหตุผลเรื่องทางเลี่ยงซ้ำ",
+      "ไม่พบเส้นทางที่เลี่ยง" not in door_text and "ยังไม่มีพื้นที่ที่ชัดพอ" not in door_text,
+      door_text)
+check("ติดกลางทาง -> ยังบอกเหตุผลว่าหาทางเลี่ยงไม่ได้",
+      "อยู่ตรงต้นทาง" not in mid_text and ("ไม่พบเส้นทางที่เลี่ยง" in mid_text
+                                            or "ยังไม่มีพื้นที่ที่ชัดพอ" in mid_text), mid_text)
+settings.ors_api_key = ""
+
 print()
 print("=" * 60)
 print(f"{len(fails)} FAILED" if fails else "ALL ORS-DIAGNOSTIC CHECKS PASSED")

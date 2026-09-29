@@ -633,10 +633,17 @@ def build_advice(analysis: RouteAnalysis, degraded: str | None) -> str:
         lines.append(f"ถนนน้ำท่วมตามเส้นทาง {len(analysis.roads)} ช่วง (จาก Floodboard):")
         for road in analysis.roads[:8]:
             depth = f" ลึกราว {road['depth_cm']} ซม." if road.get("depth_cm") else ""
-            unsure = "" if road["confident"] else " (ความมั่นใจต่ำ)"
-            closed = " ปิดการจราจร" if road["closed"] else ""
-            lines.append(f"• กม. {road['along_km']:.1f} — {road['name'] or 'ไม่ทราบชื่อถนน'}: "
-                         f"{sedan_th.get(road['sedan'], road['sedan'])}{closed}.{depth}{unsure}")
+            where = f"• กม. {road['along_km']:.1f} — {road['name'] or 'ไม่ทราบชื่อถนน'}: "
+            if road["confident"]:
+                closed = " ปิดการจราจร" if road["closed"] else ""
+                lines.append(f"{where}{sedan_th.get(road['sedan'], road['sedan'])}"
+                             f"{closed}.{depth}")
+            else:
+                # Say what was counted, not what the feed claimed: the verdict
+                # above used "ระวัง" for this one, and quoting a louder word
+                # here would contradict it.
+                lines.append(f"{where}นับเป็น ระวัง (ข้อมูลยังไม่ชัด — Floodboard ระบุ "
+                             f"{sedan_th.get(road['sedan'], road['sedan'])}).{depth}")
         if len(analysis.roads) > 8:
             lines.append(f"• และอีก {len(analysis.roads) - 8} ช่วง")
 
@@ -711,6 +718,7 @@ async def check_route(db: Session, origin: tuple[float, float], dest: tuple[floa
     through_satellite = await flood_extent.route_touches_water(
         analyses[0].geometry.path) is True
 
+    detour_failure: str | None = None
     if reported_risk or through_satellite:
         search_bbox = path_bbox(analyses[0].geometry.path, 5.0)
         # Reported points always; satellite outlines only where the feed
@@ -753,17 +761,18 @@ async def check_route(db: Session, origin: tuple[float, float], dest: tuple[floa
                                    f"เทียบกับ {analyses[0].geometry.distance_km} กม.) จึงไม่เสนอ")
                     degraded = f"{degraded} {detour_note}" if degraded else detour_note
             elif LAST_ORS_FAILURE:
-                note = f"เรื่องทางเลี่ยง: {LAST_ORS_FAILURE}"
-                degraded = f"{degraded} {note}" if degraded else note
+                # Held back until the cause is known. When the water is at the
+                # doorstep, "no way round" is true but is not the reason, and
+                # two explanations of one fact read as the app arguing with
+                # itself -- see where this is added, below.
+                detour_failure = f"เรื่องทางเลี่ยง: {LAST_ORS_FAILURE}"
         elif settings.ors_api_key and not polygons:
             # Nothing to steer around: the blocking evidence is a road segment
             # too unsure to box, or an area the satellite feed did not cover.
-            note = "ยังไม่มีพื้นที่ที่ชัดพอจะใช้คำนวณทางเลี่ยง"
-            degraded = f"{degraded} {note}" if degraded else note
+            detour_failure = "ยังไม่มีพื้นที่ที่ชัดพอจะใช้คำนวณทางเลี่ยง"
         elif polygons:
-            note = ("ยังไม่ได้ตั้งค่า OpenRouteService จึงเปรียบเทียบได้เฉพาะเส้นทางสำรองที่มีอยู่ "
-                    "ไม่สามารถคำนวณเส้นทางเลี่ยงจุดน้ำท่วมโดยตรง")
-            degraded = f"{degraded} {note}" if degraded else note
+            detour_failure = ("ยังไม่ได้ตั้งค่า OpenRouteService จึงเปรียบเทียบได้เฉพาะเส้นทางสำรองที่มีอยู่ "
+                              "ไม่สามารถคำนวณเส้นทางเลี่ยงจุดน้ำท่วมโดยตรง")
 
     # The primary route stays first in the response; the recommendation is
     # whichever route scores best, which may be an alternative.
@@ -788,6 +797,8 @@ async def check_route(db: Session, origin: tuple[float, float], dest: tuple[floa
         note = (f"จุดที่ผ่านไม่ได้อยู่ตรง{stuck} — ไม่มีเส้นทางไหนเลี่ยงได้ "
                 f"ต้องรอน้ำลด หรือเปลี่ยนจุด{stuck}")
         degraded = f"{degraded} {note}" if degraded else note
+    elif detour_failure:
+        degraded = f"{degraded} {detour_failure}" if degraded else detour_failure
 
     recommendation = None
     if best is not primary and VERDICT_ORDER[best.verdict] < VERDICT_ORDER[primary.verdict]:

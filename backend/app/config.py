@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     # Officials and moderators are exempt — their reports are already vouched
     # for, and they file from desks as well as from roadsides.
     require_photo: bool = True
+    # A pin with no name is a dot the next person cannot check against
+    # anything they can see from the car. Reports were arriving this way and
+    # showing on the map as "ไม่ระบุจุด". Officials are exempt, as with photos:
+    # their imports carry their own identifiers.
+    require_place: bool = True
 
     # --- Automatic approval ---
     # A queue guarded by one person fails at exactly the wrong moment: the night

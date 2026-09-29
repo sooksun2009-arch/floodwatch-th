@@ -39,7 +39,8 @@ def a_jpeg():
     return buf.getvalue()
 
 
-SPOT = {"lat": 13.7460, "lng": 100.5340, "level": "shallow"}
+SPOT = {"lat": 13.7460, "lng": 100.5340, "level": "shallow",
+        "place": "ถนนทดสอบ ปากซอย 1"}
 
 with TestClient(app) as c:
     settings.require_photo = True
@@ -94,6 +95,42 @@ with TestClient(app) as c:
     check("ปิดสวิตช์ → แจ้งโดยไม่มีรูปได้เหมือนเดิม", r.status_code == 201,
           f"{r.status_code} {r.text[:120]}")
     settings.require_photo = True
+
+# --- the place name ----------------------------------------------------------
+# Reports were arriving with nothing here and showing on the map as
+# "ไม่ระบุจุด": a dot with no name, which the next person cannot check against
+# anything they can see from the car. The pin says where; the name says what to
+# look for when you get there.
+with TestClient(app) as c:
+    settings.require_photo = True
+    settings.require_place = True
+    up = c.post("/api/uploads", files={"file": ("f.jpg", a_jpeg(), "image/jpeg")})
+    url = up.json()["url"]
+
+    r = c.post("/api/reports", json={**SPOT, "place": "", "photo_url": url},
+               headers={"x-forwarded-for": "2.2.2.1"})
+    check("มีรูปแต่ไม่บอกจุดสังเกต -> ถูกปฏิเสธ", r.status_code == 400, r.status_code)
+    check("และบอกเหตุผลเป็นภาษาคน",
+          "จุดสังเกต" in r.json().get("detail", ""), r.json().get("detail"))
+
+    r = c.post("/api/reports", json={**SPOT, "place": "   ", "photo_url": url},
+               headers={"x-forwarded-for": "2.2.2.2"})
+    check("เว้นวรรคล้วน -> ยังถูกปฏิเสธ", r.status_code == 400, r.status_code)
+
+    up2 = c.post("/api/uploads", files={"file": ("f.jpg", a_jpeg(), "image/jpeg")})
+    r = c.post("/api/reports",
+               json={**SPOT, "lat": 13.70, "photo_url": up2.json()["url"]},
+               headers={"x-forwarded-for": "2.2.2.3"})
+    check("บอกจุดสังเกต + มีรูป -> ผ่าน", r.status_code == 201, r.text[:150])
+
+    settings.require_place = False
+    up3 = c.post("/api/uploads", files={"file": ("f.jpg", a_jpeg(), "image/jpeg")})
+    r = c.post("/api/reports",
+               json={**SPOT, "lat": 13.71, "place": "", "photo_url": up3.json()["url"]},
+               headers={"x-forwarded-for": "2.2.2.4"})
+    check("ปิดสวิตช์ -> แจ้งโดยไม่บอกจุดได้เหมือนเดิม", r.status_code == 201,
+          f"{r.status_code} {r.text[:120]}")
+    settings.require_place = True
 
 print()
 print("=" * 60)

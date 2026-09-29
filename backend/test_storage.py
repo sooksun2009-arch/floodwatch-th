@@ -137,7 +137,8 @@ with TestClient(app) as c:
           str(r.json()))
     check("URL ที่ได้ผ่านการตรวจของเราเอง", storage.is_managed_url(uploaded), uploaded)
 
-    body = {"lat": 13.7460, "lng": 100.5340, "level": "shallow"}
+    body = {"lat": 13.7460, "lng": 100.5340, "level": "shallow",
+            "place": "ถนนทดสอบ ปากซอย 1"}
     r = c.post("/api/reports", json={**body, "photo_url": uploaded},
                headers={"x-forwarded-for": "1.1.1.1"})
     check("แจ้งพร้อมรูปที่อัปโหลดเอง → ผ่าน", r.status_code == 201, r.text[:200])

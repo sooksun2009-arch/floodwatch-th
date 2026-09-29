@@ -206,6 +206,16 @@ export default function ReportModal({ open, onClose, initialPoint, onPickOnMap, 
                     {coordNote.text}
                   </p>
                 )}
+                {point && (
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${point.lat},${point.lng}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1.5 inline-block text-xs font-medium text-sky-400 underline decoration-sky-700 underline-offset-2"
+                  >
+                    เปิดจุดนี้ใน Google Maps เพื่อตรวจดูว่าถูกที่ ↗
+                  </a>
+                )}
                 <p className="mt-1 text-xs text-slate-500">
                   ใน Google Maps กดค้างที่จุดนั้น แล้วแตะพิกัดที่ขึ้นมาเพื่อคัดลอก
                   หรือกดแชร์แล้วคัดลอกลิงก์มาวางก็ได้
@@ -287,7 +297,7 @@ export default function ReportModal({ open, onClose, initialPoint, onPickOnMap, 
 
               <div>
                 <label className="label" htmlFor="place">
-                  จุดสังเกต / ถนน / แยก
+                  จุดสังเกต / ถนน / แยก <span className="text-red-400">*</span>
                 </label>
                 <input
                   id="place"
@@ -296,7 +306,16 @@ export default function ReportModal({ open, onClose, initialPoint, onPickOnMap, 
                   onChange={(event) => setPlace(event.target.value)}
                   placeholder="เช่น ถนนลาดพร้าว ปากซอย 71"
                   maxLength={255}
+                  required
                 />
+                {/* Reports were arriving with nothing here, and the map showed
+                    them as "ไม่ระบุจุด" -- a pin with no name, which the next
+                    person cannot check against anything they can see. The pin
+                    says where; this says what to look for when you get there. */}
+                <p className="mt-1 text-xs text-slate-500">
+                  บอกชื่อถนน ปากซอย หรือจุดสังเกตใกล้ ๆ
+                  เพื่อให้คนที่ขับมาทางนี้รู้ว่าต้องมองหาอะไร
+                </p>
               </div>
 
               <div>
@@ -321,12 +340,25 @@ export default function ReportModal({ open, onClose, initialPoint, onPickOnMap, 
                 <p className="mb-1.5 text-xs text-slate-400">
                   จำเป็นต้องมี — คนที่กำลังจะขับผ่านใช้รูปตัดสินใจ ไม่ใช่ตัวเลข
                   และรายงานที่มีรูปจะขึ้นแผนที่ทันทีโดยไม่ต้องรอตรวจ
+                  <span className="mt-0.5 block text-slate-500">
+                    ถ่ายสดหรือเลือกจากคลังภาพก็ได้
+                  </span>
                 </p>
+                {/* No `capture` attribute. It forced the camera open and hid
+                    the gallery entirely, which a user reported: they had
+                    already taken the photo and pulled over to send it.
+
+                    It was never much of a freshness guarantee either. Uploaded
+                    photos have their EXIF stripped before they are saved, so
+                    the app cannot tell a picture taken thirty seconds ago from
+                    one taken last week whichever way it arrived. It was paying
+                    a real cost for a check that does not exist. What does
+                    carry the age is the report's own timestamp, shown on every
+                    pin. */}
                 <input
                   id="photo"
                   type="file"
                   accept="image/*"
-                  capture="environment"
                   onChange={pickPhoto}
                   className="w-full text-sm text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-sm file:text-slate-200"
                 />
@@ -366,15 +398,23 @@ export default function ReportModal({ open, onClose, initialPoint, onPickOnMap, 
               <button
                 type="submit"
                 className="btn-danger w-full disabled:opacity-50"
-                disabled={busy || !photo || !point}
+                disabled={busy || !photo || !point || !place.trim()}
               >
                 {busy ? 'กำลังส่ง…' : 'ส่งรายงาน'}
               </button>
-              {!busy && (!photo || !point) && (
+              {!busy && (!photo || !point || !place.trim()) && (
                 <p className="mt-1.5 text-center text-xs text-slate-400">
-                  ยัง{!point ? 'ไม่ได้ระบุตำแหน่ง' : ''}
-                  {!point && !photo ? ' และ' : ''}
-                  {!photo ? 'ไม่ได้แนบรูป' : ''}
+                  {/* Names what is still missing rather than just greying the
+                      button out, which leaves someone tapping a dead control
+                      and guessing which of three things is wrong. */}
+                  ยังขาด{' '}
+                  {[
+                    !point && 'ตำแหน่ง',
+                    !photo && 'รูปถ่าย',
+                    !place.trim() && 'จุดสังเกต',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </p>
               )}
             </div>

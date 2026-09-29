@@ -550,6 +550,21 @@ export default function MapView({
       // that a road was flooded three hours ago and had no way to say the
       // water had gone. A stale pin sends drivers around a road that is fine,
       // and the people best placed to clear it are the ones standing there.
+      // Somewhere to look at the spot without pinching a small map, which a
+      // user said was the hard part on a phone. Built as a node with its href
+      // set from the feature's own coordinates -- never from its text.
+      const [pinLng, pinLat] = event.features[0].geometry.coordinates
+      const maps = document.createElement('a')
+      maps.href =
+        `https://www.google.com/maps/search/?api=1&query=${pinLat},${pinLng}`
+      maps.target = '_blank'
+      maps.rel = 'noopener noreferrer'
+      maps.textContent = tRef.current('popup.openMaps') + ' ↗'
+      maps.style.cssText =
+        'display:inline-block;margin-top:.4rem;font-size:12px;color:#38bdf8;' +
+        'text-decoration:underline;text-underline-offset:2px'
+      root.appendChild(maps)
+
       const actions = document.createElement('div')
       actions.style.cssText = 'display:flex;gap:.4rem;margin-top:.5rem;flex-wrap:wrap'
       const buttonCss =

@@ -145,6 +145,15 @@ def create_report(payload: ReportIn, request: Request, db: Session = Depends(get
             "ต้องแนบรูปถ่ายจุดที่น้ำท่วมด้วย — รูปช่วยให้คนอื่นตัดสินใจได้จริง "
             "และทำให้รายงานขึ้นแผนที่ทันทีโดยไม่ต้องรอตรวจ")
 
+    # Same shape as the photo rule, and placed after is_official for the same
+    # reason: it has to exist before it can be read.
+    if (settings.require_place and not is_official
+            and not (payload.place or "").strip()):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "ช่วยบอกจุดสังเกตด้วยครับ — ชื่อถนน ปากซอย หรือที่หมายใกล้ ๆ "
+            "หมุดบอกว่าตรงไหน แต่ชื่อจุดบอกคนที่ขับมาว่าต้องมองหาอะไร")
+
     province_id = payload.province_id
     if province_id is None:
         province = resolve_province(db, payload.lat, payload.lng)

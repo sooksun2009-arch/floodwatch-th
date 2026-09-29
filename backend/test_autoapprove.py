@@ -43,7 +43,10 @@ BANGNA = (13.6680, 100.6040)
 
 
 def file(c, lat, lng, *, ip, photo=None, level="shallow", place=None):
-    body = {"lat": lat, "lng": lng, "level": level}
+    # Every public report needs a place name now. The rule under test here is
+    # auto-approval, so the fixture satisfies the place rule rather than
+    # switching it off.
+    body = {"lat": lat, "lng": lng, "level": level, "place": "ถนนทดสอบ"}
     if photo:
         body["photo_url"] = photo
     if place:
@@ -135,9 +138,11 @@ with TestClient(app) as c:
     login = c.post("/api/auth/login", json={"username": "dup", "password": "pass12345"})
     auth = {"Authorization": f"Bearer {login.json()['access_token']}"}
     spot = (13.8200, 100.4400)
-    a = c.post("/api/reports", json={"lat": spot[0], "lng": spot[1], "level": "shallow"},
+    a = c.post("/api/reports", json={"lat": spot[0], "lng": spot[1],
+                                     "level": "shallow", "place": "ถนนทดสอบ"},
                headers={**auth, "x-forwarded-for": "7.7.7.7"})
-    b = c.post("/api/reports", json={"lat": spot[0] + 0.0001, "lng": spot[1], "level": "shallow"},
+    b = c.post("/api/reports", json={"lat": spot[0] + 0.0001, "lng": spot[1],
+                                     "level": "shallow", "place": "ถนนทดสอบ"},
                headers={**auth, "x-forwarded-for": "8.8.8.8"})
     check("ผู้ใช้เดิมล็อกอิน แจ้งซ้ำคนละ IP → ยังเข้าคิว",
           a.json()["status"] == "pending" and b.json()["status"] == "pending",

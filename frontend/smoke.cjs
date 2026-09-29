@@ -456,24 +456,32 @@ const check = (name, ok, extra = '') => {
   check('ชั้นเรดาร์ถูกสร้างไว้รอ (สลับด้วยการซ่อน ไม่ใช่โหลดใหม่)', rain.layer,
     JSON.stringify(rain))
 
+  let openedId = null
+
   // Click a flood pin and use the buttons on it. These moved onto the popup
   // because the map is how most people find a pin, and the only way to say
   // "the water has gone" used to be buried in the route results panel.
   if (state.layers && state.layers['report-dots'] > 0) {
-    const opened = await page.evaluate(() => {
+    // Captures which pin this picks: the later standalone-button test must
+    // avoid this exact one, since a second dispute vote on the same pin in
+    // the same session is correctly refused client-side ("already voted"),
+    // which would make that test's before/after count comparison a false
+    // failure rather than a real one.
+    openedId = await page.evaluate(() => {
       const map = window.__fwMap
       const found = map.queryRenderedFeatures({ layers: ['report-dots'] })
       // Prefer one with a photo: a tall portrait picture is what used to push
       // the buttons under it off the bottom of the screen.
       const feature = found.find((f) => f.properties.photo) || found[0]
-      if (!feature) return false
+      if (!feature) return null
       const point = map.project(feature.geometry.coordinates)
       map.fire('click', {
         lngLat: map.unproject(point), point, features: [feature],
         originalEvent: new MouseEvent('click'),
       })
-      return true
+      return feature.properties.id
     })
+    const opened = Boolean(openedId)
     check('กดหมุดน้ำท่วมแล้วเปิด popup ได้', opened)
 
     if (opened) {
@@ -535,6 +543,91 @@ const check = (name, ok, extra = '') => {
       )
       console.log(`      popup หลังกด: ${after.replace(/\s+/g, ' ').slice(0, 120)}`)
       console.log(`      รูปสูง ${layout.photoHeight}px · ปุ่มอยู่ที่ ${layout.buttonBottom}/${layout.viewport}px`)
+    }
+  }
+
+  // The standalone "น้ำลดแล้ว" button: tap it, tap a pin, done, without ever
+  // opening the full popup. Added after a reader said the only button on the
+  // map made it look like reporting new flooding was the only thing this app
+  // does. Verified against the server's own count, not the popup's text —
+  // the popup deliberately shows a fixed "thank you" here rather than the
+  // count, so only the API can say whether the vote actually landed.
+  if (state.layers && state.layers['report-dots'] > 0) {
+    await page.evaluate(() => {
+      document.querySelectorAll('.maplibregl-popup-close-button').forEach((b) => b.click())
+    })
+
+    const pressed = await page.evaluate(() => {
+      const button = [...document.querySelectorAll('button')]
+        .find((b) => b.textContent.trim() === 'น้ำลดแล้ว')
+      button?.click()
+      return Boolean(button)
+    })
+    check('มีปุ่ม "น้ำลดแล้ว" แยกอยู่นอก popup', pressed)
+
+    if (pressed) {
+      await new Promise((r) => setTimeout(r, 500))
+      const banner = await page.evaluate(() => document.body.innerText)
+      check('กดแล้วขึ้นแถบบอกให้แตะหมุด', banner.includes('แตะหมุดน้ำท่วมบนแผนที่ที่น้ำลดแล้ว'))
+
+      // A fresh pin: reusing the one the earlier block already voted on would
+      // only exercise the "already voted" branch (correctly refused client
+      // side), not a real vote — and would fail the count check below for a
+      // reason that has nothing to do with this button.
+      let picked = null
+      if (state.layers['report-dots'] < 2) {
+        // Only one pin on screen and the earlier block already voted on it —
+        // there is nothing left to click that would exercise a real vote.
+        // Not a failure: this is a data-availability skip, the same shape as
+        // the filter test below when there are not enough levels to compare.
+        console.log('      (ข้ามส่วนเช็คตัวเลข: มีหมุดให้แตะแค่จุดเดียว)')
+      } else {
+        picked = await page.evaluate((avoidId) => {
+          const map = window.__fwMap
+          const found = map.queryRenderedFeatures({ layers: ['report-dots'] })
+          const feature = found.find((f) => f.properties.id !== avoidId) || null
+          if (!feature) return null
+          const point = map.project(feature.geometry.coordinates)
+          map.fire('click', {
+            lngLat: map.unproject(point), point, features: [feature],
+            originalEvent: new MouseEvent('click'),
+          })
+          return feature.properties.id
+        }, openedId)
+        check('มีหมุดอีกจุดให้แตะ (คนละจุดกับที่โหวตไปแล้วข้างบน)', Boolean(picked), picked)
+      }
+
+      if (picked) {
+        const before = await page.evaluate(
+          (id) => fetch(`/api/reports/${id}`).then((r) => r.json()),
+          picked,
+        )
+        let text = ''
+        for (let i = 0; i < 20; i++) {
+          text = await page.evaluate(
+            () => document.querySelector('.maplibregl-popup-content')?.textContent || '',
+          )
+          if (text.includes('ขอบคุณ') || text.includes('ไม่สำเร็จ')) break
+          await new Promise((r) => setTimeout(r, 400))
+        }
+        check('แตะหมุดแล้วขึ้นข้อความยืนยัน', text.includes('ขอบคุณ'), text.slice(0, 120))
+
+        const after = await page.evaluate(
+          (id) => fetch(`/api/reports/${id}`).then((r) => r.json()),
+          picked,
+        )
+        check(
+          'เช็คกับเซิร์ฟเวอร์โดยตรง: ตัวเลขแย้งเพิ่มขึ้นจริง (ไม่ใช่แค่ข้อความในหน้าจอ)',
+          after.dispute_count === before.dispute_count + 1,
+          `ก่อน ${before.dispute_count} หลัง ${after.dispute_count}`,
+        )
+
+        const modeAfter = await page.evaluate(() => document.body.innerText)
+        check(
+          'โหมดปิดเองหลังแตะหนึ่งครั้ง (ไม่ค้างรอแตะซ้ำ)',
+          !modeAfter.includes('แตะหมุดน้ำท่วมบนแผนที่ที่น้ำลดแล้ว'),
+        )
+      }
     }
   }
 

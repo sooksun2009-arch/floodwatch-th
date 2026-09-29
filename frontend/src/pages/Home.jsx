@@ -219,6 +219,14 @@ export default function Home() {
   const [origin, setOrigin] = useState(null)
   const [destination, setDestination] = useState(null)
   const [picking, setPicking] = useState(null)
+  // A second, narrower pick mode: instead of tapping anywhere on the map,
+  // this one only ever responds to tapping an existing flood pin, and skips
+  // straight to filing a dispute vote -- the same vote the popup's own
+  // "น้ำลดแล้ว" button files, just reachable without first discovering that
+  // popups have it. Mutually exclusive with `picking` below: turning one on
+  // turns the other off, so the crosshair and the pin-tap hint are never
+  // both trying to explain the map at once.
+  const [subsideMode, setSubsideMode] = useState(false)
   const [mapCenter, setMapCenter] = useState(null)
   const { t } = useT()
   const [radarOn, setRadarOn] = useState(false)
@@ -335,6 +343,19 @@ export default function Home() {
     [picking, usePoint],
   )
 
+  // `picking` can also be set from inside RoutePanel (the origin/destination
+  // "pick on map" buttons call the setter directly), so this is the one place
+  // that can reliably say "anyone entering that mode exits this one".
+  useEffect(() => {
+    if (picking) setSubsideMode(false)
+  }, [picking])
+
+  const onSubsideResult = useCallback((status) => {
+    // Single-shot, like the other pick modes: one tap and it is done, rather
+    // than staying armed and risking a second accidental vote on the next tap.
+    setSubsideMode(false)
+  }, [])
+
   const PICK_LABEL = {
     origin: t('route.from'), destination: t('route.to'), report: t('report.where'),
   }
@@ -388,6 +409,8 @@ export default function Home() {
               selected={selected}
               onError={setMapError}
               pickMode={Boolean(picking)}
+              subsideMode={subsideMode}
+              onSubsideResult={onSubsideResult}
               fitKey={fitKey}
             />
           </Suspense>
@@ -500,7 +523,13 @@ export default function Home() {
             </div>
           )}
 
-          {!picking && (
+          {/* The one control that only ever adds a hazard sat alone in this
+              corner, and a reader said as much: it reads as the only thing
+              this map lets you do. Stacked above it, same corner, is the
+              other direction -- clearing one -- styled in the app's own
+              "ปกติ" green rather than the hazard orange, so the two read as
+              opposite actions rather than two flavours of the same button. */}
+          {!picking && !subsideMode && (
             <button
               onClick={() => {
                 setReportPoint(null)
@@ -513,6 +542,30 @@ export default function Home() {
             >
               {t('report.button')}
             </button>
+          )}
+          {!picking && !subsideMode && (
+            <button
+              onClick={() => setSubsideMode(true)}
+              className="absolute bottom-16 right-3 z-10 rounded-full border border-emerald-600 bg-emerald-950/90 px-4 py-2.5 text-sm font-semibold text-emerald-200 shadow-lg backdrop-blur hover:bg-emerald-900 lg:bottom-[9.25rem]"
+            >
+              {t('subside.button')}
+            </button>
+          )}
+          {subsideMode && (
+            <div className="absolute inset-x-3 top-3 z-10 flex items-start justify-between gap-2 rounded-xl border border-emerald-700 bg-emerald-950/95 px-3 py-2 text-sm text-emerald-100 backdrop-blur">
+              <span>
+                {reports.length > 0
+                  ? t('subside.instruction')
+                  : t('subside.instructionEmpty')}
+              </span>
+              <button
+                onClick={() => setSubsideMode(false)}
+                aria-label={t('common.cancel')}
+                className="shrink-0 rounded-lg border border-emerald-700 px-2 py-1 text-xs text-emerald-200 hover:bg-emerald-900"
+              >
+                {t('common.cancel')}
+              </button>
+            </div>
           )}
         </div>
       </div>

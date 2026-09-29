@@ -232,7 +232,12 @@ export default function MapView({
   onMapClick,
   onCenterChange,
   onError,
+  onSubsideResult,
   pickMode = false,
+  // Tap a flood pin to mark it as receded, bypassing the full detail popup.
+  // A separate mode from pickMode: that one wants a tap anywhere on the map,
+  // this one only ever cares about existing report pins.
+  subsideMode = false,
   showRadar = false,
   showFloodExtent = false,
   selected = EMPTY_SET,
@@ -261,8 +266,12 @@ export default function MapView({
   const markersRef = useRef({ origin: null, destination: null })
   // Callbacks live in a ref so the map's event handlers always see the latest
   // ones without the map having to be torn down and rebuilt.
-  const handlersRef = useRef({ onCameraClick, onMapClick, onCenterChange, onError })
-  handlersRef.current = { onCameraClick, onMapClick, onCenterChange, onError }
+  const handlersRef = useRef({ onCameraClick, onMapClick, onCenterChange, onError, onSubsideResult })
+  handlersRef.current = { onCameraClick, onMapClick, onCenterChange, onError, onSubsideResult }
+  // Read inside a click handler registered once at map creation, so it always
+  // sees the mode's current value rather than the one captured at mount.
+  const subsideModeRef = useRef(subsideMode)
+  subsideModeRef.current = subsideMode
 
   useEffect(() => {
     if (mapRef.current) return undefined
@@ -487,6 +496,38 @@ export default function MapView({
     map.on('click', 'report-dots', (event) => {
       const props = event.features?.[0]?.properties
       if (!props) return
+
+      // Marking a pin as receded skips the full popup entirely: the point of a
+      // standalone "water has gone down" button is one tap, not open-popup,
+      // find-the-small-dispute-link, tap-that-too. Reuses the exact same vote
+      // call and the same voted-this-session bookkeeping the full popup uses,
+      // so opening a pin normally afterward shows the correct, already-voted
+      // state rather than inviting a second vote.
+      if (subsideModeRef.current) {
+        const note = document.createElement('div')
+        note.style.cssText = 'font-size:13px;line-height:1.5;max-width:200px'
+        popup.setLngLat(event.lngLat).setDOMContent(note).addTo(map)
+
+        if (votedReportsRef.current.has(props.id)) {
+          note.textContent = tRef.current('subside.already')
+          handlersRef.current.onSubsideResult?.('already')
+          return
+        }
+
+        note.textContent = tRef.current('subside.sending')
+        api
+          .voteReport(props.id, 'dispute')
+          .then(() => {
+            votedReportsRef.current.add(props.id)
+            note.textContent = tRef.current('subside.thanks')
+            handlersRef.current.onSubsideResult?.('ok')
+          })
+          .catch((error) => {
+            note.textContent = error?.message || tRef.current('popup.sendFailed')
+            handlersRef.current.onSubsideResult?.('error')
+          })
+        return
+      }
 
       // Popup content is built with DOM nodes and textContent, never an HTML
       // string: place names and descriptions are attacker-controllable (anyone
@@ -816,17 +857,25 @@ export default function MapView({
       const box = container.getBoundingClientRect()
       const credit = container.querySelector('.maplibregl-ctrl-attrib')
       const width = credit ? credit.getBoundingClientRect().width : 170
+      const height = credit ? credit.getBoundingClientRect().height : 24
+      const blockers = [...document.querySelectorAll('button, a')]
+        .filter((el) => !credit?.contains(el))
+        .map((el) => el.getBoundingClientRect())
+        .filter((r) => r.width >= 8 && r.height >= 8
+          && r.right > box.right - width - 24 && r.left < box.right + 24)
+
+      // Settle rather than look once. The first version only considered
+      // buttons within 140px of the bottom, so when a second button was
+      // stacked above the first, the credit was lifted clear of the lower
+      // one and straight into the upper one. Keep raising it until the spot
+      // it would occupy is empty, however tall the stack in that corner gets.
       let lift = 12
-      for (const el of document.querySelectorAll('button, a')) {
-        if (credit?.contains(el)) continue
-        const r = el.getBoundingClientRect()
-        if (r.width < 8 || r.height < 8) continue
-        // Only things sitting in the strip the credit occupies.
-        const inStrip = r.right > box.right - width - 24 && r.left < box.right + 24
-        const nearBottom = r.bottom > box.bottom - 140 && r.top < box.bottom + 80
-        if (inStrip && nearBottom) {
-          lift = Math.max(lift, box.bottom - r.top + 8)
-        }
+      for (let pass = 0; pass < 10; pass++) {
+        const bottom = box.bottom - lift
+        const top = bottom - height
+        const hit = blockers.find((r) => r.bottom > top && r.top < bottom)
+        if (!hit) break
+        lift = box.bottom - hit.top + 8
       }
       container.style.setProperty('--fw-credit-lift', `${Math.round(lift)}px`)
     }

@@ -49,6 +49,15 @@ async def lifespan(app: FastAPI):
         logger.info("seed complete")
     except Exception:
         logger.exception("seed failed — the app still starts, data may be incomplete")
+    try:
+        # One-time patch for the day this app switched the visitor counter from
+        # server time to Bangkok time (see visits.migrate_stale_utc_hours). Safe
+        # to leave running forever: it checks its own marker and does nothing
+        # once that day's rows are already fixed.
+        result = _visits.migrate_stale_utc_hours(db)
+        logger.info("แก้ข้อมูลผู้เข้าชมที่ติดเขตเวลาเก่า: %s", result)
+    except Exception:
+        logger.exception("แก้ข้อมูลผู้เข้าชมไม่สำเร็จ — ไม่กระทบการทำงานอื่นของแอป")
     finally:
         db.close()
 

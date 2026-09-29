@@ -50,6 +50,14 @@ def _now():
 # the promise that it does not learn that.
 PAGES = ("map", "cameras", "stats", "admin", "login", "other")
 
+# A day value that can never collide with a real "YYYY-MM-DD" string, used to
+# mark rows that are bookkeeping (like the one-time migration flag below)
+# rather than an actual visit. Every query that aggregates *across* days has
+# to exclude it explicitly, or it sorts in among real dates and throws off
+# whichever row a caller treats as "today" -- exactly the bug that shipped
+# with the first version of this file.
+META_DAY = "_meta"
+
 
 class VisitStat(Base):
     """One row per hour. Counts only."""
@@ -112,6 +120,7 @@ def summary(db: Session, days: int = 14) -> dict:
         select(VisitStat.day,
                func.sum(VisitStat.views),
                func.sum(VisitStat.visitors))
+        .where(VisitStat.day != META_DAY)
         .group_by(VisitStat.day)
         .order_by(VisitStat.day.desc())
         .limit(days)
@@ -139,3 +148,52 @@ def summary(db: Session, days: int = 14) -> dict:
         "hours": [{"hour": int(h), "views": int(v or 0)} for h, v in by_hour],
         "pages": [{"page": p, "views": int(v or 0)} for p, v in by_page],
     }
+
+
+# ------------------------------------------------------- one-time correction
+
+def migrate_stale_utc_hours(db: Session) -> str:
+    """Fix the one day this app has ever recorded on the wrong clock.
+
+    This feature launched 2026-09-28 22:12 Bangkok time and the Bangkok-clock
+    fix landed 2026-09-29 09:02:55 -- so on 2026-09-29 only, rows written
+    before that moment carry a UTC hour (0, 1, 2) under a Bangkok day, which
+    reads as a spike at "00:00" that never happened: the real traffic was at
+    07:00-09:02.
+
+    Safe to run more than once (it moves nothing the second time) and safe to
+    run at any later date (the affected day, and the exact hours affected, are
+    both hardcoded and specific to that one transition -- this is a patch for
+    a historical fact, not a general timezone converter, and is not meant to
+    run again after this).
+    """
+    AFFECTED_DAY = "2026-09-29"
+    HOUR_SHIFT = {0: 7, 1: 8, 2: 9}
+
+    marker = db.execute(
+        select(VisitStat).where(VisitStat.day == META_DAY, VisitStat.page == "_tz_fix_v1")
+    ).scalar_one_or_none()
+    if marker is not None:
+        return "ทำไปแล้วก่อนหน้านี้ ไม่ต้องทำซ้ำ"
+
+    moved = 0
+    for old_hour, new_hour in HOUR_SHIFT.items():
+        rows = db.execute(
+            select(VisitStat).where(VisitStat.day == AFFECTED_DAY, VisitStat.hour == old_hour)
+        ).scalars().all()
+        for stale in rows:
+            target = db.execute(
+                select(VisitStat).where(VisitStat.day == AFFECTED_DAY,
+                                        VisitStat.hour == new_hour, VisitStat.page == stale.page)
+            ).scalar_one_or_none()
+            if target is None:
+                stale.hour = new_hour
+            else:
+                target.views += stale.views
+                target.visitors += stale.visitors
+                db.delete(stale)
+            moved += 1
+
+    db.add(VisitStat(day=META_DAY, hour=0, page="_tz_fix_v1", views=0, visitors=0))
+    db.commit()
+    return f"ย้ายข้อมูล {moved} แถวจากชั่วโมง UTC ไปชั่วโมงไทยที่ถูกต้องแล้ว"

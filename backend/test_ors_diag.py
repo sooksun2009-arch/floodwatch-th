@@ -134,12 +134,14 @@ def seg(name, sedan, conf, w, s_, e, n):
             "lines": [[[w, s_], [e, n]]]}
 
 
-NEAR = (13.60, 100.60, 13.80, 100.80)   # min_lat, min_lng, max_lat, max_lng
+# A route running north-east; "near" means near this line, not near a box
+# around it — the corridor is what a detour will actually use.
+NEAR = [(13.70 + i * 0.01, 100.70 + i * 0.01) for i in range(9)]
 SEGS = [
-    seg("ท่วมหนัก ใกล้เส้นทาง", "blocked", 0.9, 100.70, 13.70, 100.71, 13.71),
-    seg("เสี่ยง ใกล้เส้นทาง", "risky", 0.8, 100.72, 13.72, 100.73, 13.73),
-    seg("ไม่มั่นใจ", "blocked", 0.2, 100.74, 13.74, 100.75, 13.75),
-    seg("ผ่านได้", "caution", 0.9, 100.76, 13.76, 100.77, 13.77),
+    seg("ท่วมหนัก บนเส้นทาง", "blocked", 0.9, 100.70, 13.70, 100.705, 13.705),
+    seg("เสี่ยง บนเส้นทาง", "risky", 0.8, 100.72, 13.72, 100.725, 13.725),
+    seg("ไม่มั่นใจ", "blocked", 0.2, 100.74, 13.74, 100.745, 13.745),
+    seg("ผ่านได้", "caution", 0.9, 100.76, 13.76, 100.765, 13.765),
     seg("ไกลออกไป", "blocked", 0.9, 101.50, 14.50, 101.51, 14.51),
 ]
 
@@ -148,8 +150,19 @@ check("เอาทุกจุดน้ำท่วมใกล้เส้น�
       poly is not None and len(poly["coordinates"]) == 2, poly and len(poly["coordinates"]))
 check("ข้ามจุดที่ความมั่นใจต่ำ และจุดที่รถผ่านได้",
       poly is not None and len(poly["coordinates"]) == 2)
-check("ข้ามจุดที่อยู่นอกกรอบเส้นทาง",
+check("ข้ามจุดที่อยู่ไกลจากเส้นทาง",
       all(abs(c[0]) < 101 for rings in poly["coordinates"] for c in rings[0]))
+
+# The bug this ranking exists for: a real 27 km corridor had 282 candidates,
+# 197 of them impassable, so ranking by severity sent sixty areas from all
+# over the box and left out the flooded road actually on the route.
+far_blocked = [seg(f"ไกล {i}", "blocked", 0.99, 100.70 + 0.02, 13.70 + i * 0.0005,
+                   100.705 + 0.02, 13.705 + i * 0.0005) for i in range(80)]
+on_route = seg("อยู่บนเส้นทางเอง", "risky", 0.6, 100.70, 13.70, 100.7005, 13.7005)
+ranked = routing.nearby_road_polygons(far_blocked + [on_route], NEAR, limit=20)
+covered = any(routing._point_in_ring(13.70025, 100.70025, rings[0])
+              for rings in ranked["coordinates"])
+check("จุดที่อยู่บนเส้นทางต้องถูกกันก่อน แม้จะรุนแรงน้อยกว่าจุดที่อยู่ไกล", covered)
 
 only_blocked = routing.nearby_road_polygons(SEGS, NEAR, blocked_only=True)
 check("โหมดสำรอง: เอาเฉพาะจุดที่รถเก๋งผ่านไม่ได้",

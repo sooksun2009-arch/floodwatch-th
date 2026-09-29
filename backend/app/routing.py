@@ -204,23 +204,31 @@ def avoid_polygons(db: Session, bbox: tuple[float, float, float, float]) -> dict
     return {"type": "MultiPolygon", "coordinates": polygons}
 
 
-def nearby_road_polygons(segments: list[dict] | None, bbox: tuple[float, float, float, float],
+# How far from the route a flooded stretch is still worth fencing off. Wide
+# enough to cover the streets a detour would use, narrow enough that the
+# request is about this journey.
+NEARBY_CORRIDOR_KM = 3.0
+
+
+def nearby_road_polygons(segments: list[dict] | None, path: list[tuple[float, float]],
                          limit: int = 60, blocked_only: bool = False) -> dict | None:
-    """Avoid areas for every flooded stretch near the corridor, not only the
-    ones on the routes already found.
+    """Avoid areas for the flooded stretches nearest the corridor, not only the
+    ones already matched to a route.
 
     Steering around just the water on the original route sends the detour
     down whichever street ORS likes next, which may be under water too --
     measured on a real route, the "flood avoidance" option came back with
-    more flooded stretches than the plain alternative. What is avoided has
-    to be the flooding, not the flooding we happened to have matched.
+    more flooded stretches than the plain alternative.
 
-    Bounded and ranked: impassable first, then confidence, because the
-    request has to stay small enough for the routing API to accept.
+    Ranked by distance from the route, because only so many areas fit in one
+    request. Ranking by severity instead looked reasonable and was wrong: a
+    27 km corridor had 282 candidates, 197 of them impassable, so the sixty
+    sent were the worst water anywhere in the box while Thepharat Road --
+    ranked 246th, and actually on the route -- was left out and the detour
+    drove straight through it.
     """
-    if not segments:
+    if not segments or len(path) < 2:
         return None
-    min_lat, min_lng, max_lat, max_lng = bbox
     pad = 0.00045  # about 50 m either side of the road
 
     chosen = []
@@ -235,13 +243,16 @@ def nearby_road_polygons(segments: list[dict] | None, bbox: tuple[float, float, 
         east = max(x for x, _ in points)
         south = min(y for _, y in points)
         north = max(y for _, y in points)
-        if east < min_lng or west > max_lng or north < min_lat or south > max_lat:
+        away_km, _ = point_to_path_km((south + north) / 2, (west + east) / 2, path)
+        if away_km > NEARBY_CORRIDOR_KM:
             continue
-        chosen.append((seg["sedan"] != "blocked", -seg["conf"], west, south, east, north))
+        chosen.append((round(away_km, 2), seg["sedan"] != "blocked", -seg["conf"],
+                       west, south, east, north))
 
     chosen.sort()
+    chosen = [c[3:] for c in chosen]
     polygons = []
-    for _, _, west, south, east, north in chosen[:limit]:
+    for west, south, east, north in chosen[:limit]:
         ring = [[west - pad, south - pad], [east + pad, south - pad],
                 [east + pad, north + pad], [west - pad, north + pad]]
         ring.append(ring[0])
@@ -711,7 +722,7 @@ async def check_route(db: Session, origin: tuple[float, float], dest: tuple[floa
                 road_avoid_polygons(analyses),
                 # Every flooded stretch near the corridor, not just the ones
                 # already matched to a route.
-                nearby_road_polygons(road_segments, search_bbox),
+                nearby_road_polygons(road_segments, analyses[0].geometry.path),
                 await flood_extent.avoid_near(search_bbox),
             ),
             [origin, dest],
@@ -724,7 +735,8 @@ async def check_route(db: Session, origin: tuple[float, float], dest: tuple[floa
                 # no answer, and the verdict still says what is on it.
                 fallback = drop_polygons_containing(
                     _merge_polygons(avoid_polygons(db, search_bbox),
-                                    nearby_road_polygons(road_segments, search_bbox,
+                                    nearby_road_polygons(road_segments,
+                                                         analyses[0].geometry.path,
                                                          limit=25, blocked_only=True)),
                     [origin, dest])
                 if fallback:

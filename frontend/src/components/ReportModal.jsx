@@ -24,6 +24,9 @@ export default function ReportModal({ open, onClose, initialPoint, onPickOnMap, 
   const [passable, setPassable] = useState(null)
   const [photo, setPhoto] = useState(null)
   const [photoPreview, setPhotoPreview] = useState(null)
+  // Age of the chosen picture, so an old one can be questioned before it goes
+  // on a map people use to decide whether to drive.
+  const [photoAge, setPhotoAge] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [done, setDone] = useState(null)
@@ -76,11 +79,32 @@ export default function ReportModal({ open, onClose, initialPoint, onPickOnMap, 
     }
   }
 
+  /**
+   * How long ago the chosen file was written, in minutes, or null.
+   *
+   * The browser never says whether a picture came from the camera or the
+   * gallery, and asking the person would be one more thing to get wrong. The
+   * file's own timestamp answers the question that actually matters: a camera
+   * capture is seconds old, a picture chosen from the gallery keeps whenever
+   * it was taken.
+   *
+   * Treated as a prompt to check, never as proof: some Android builds set this
+   * to the time the file was copied rather than taken, so an old picture can
+   * look new. It can be wrong in the direction of saying nothing, which is the
+   * safe direction for a warning.
+   */
+  const photoAgeMinutes = (file) => {
+    if (!file?.lastModified) return null
+    const minutes = (Date.now() - file.lastModified) / 60000
+    return minutes >= 0 && minutes < 60 * 24 * 365 ? minutes : null
+  }
+
   const pickPhoto = (event) => {
     const file = event.target.files?.[0]
     if (!file) return
     if (file.size > 8 * 1024 * 1024) return setError('รูปใหญ่เกิน 8 MB')
     setPhoto(file)
+    setPhotoAge(photoAgeMinutes(file))
     if (photoPreview) URL.revokeObjectURL(photoPreview)
     setPhotoPreview(URL.createObjectURL(file))
     setError(null)
@@ -368,6 +392,27 @@ export default function ReportModal({ open, onClose, initialPoint, onPickOnMap, 
                     alt="ตัวอย่างรูปที่เลือก"
                     className="mt-2 max-h-44 rounded-lg object-cover"
                   />
+                )}
+                {/* Only when the file is genuinely old. A warning on every
+                    photo is a warning nobody reads, and a camera capture is
+                    seconds old so it never sees this. */}
+                {photoAge !== null && photoAge > 30 && (
+                  <p
+                    role="status"
+                    className="mt-2 rounded-lg border border-amber-700/60 bg-amber-950/40 px-2.5 py-2 text-xs leading-relaxed text-amber-100"
+                  >
+                    รูปนี้ถ่ายไว้{' '}
+                    <b>
+                      {photoAge < 60
+                        ? `${Math.round(photoAge)} นาทีที่แล้ว`
+                        : photoAge < 60 * 24
+                          ? `${Math.round(photoAge / 60)} ชั่วโมงที่แล้ว`
+                          : `${Math.round(photoAge / 60 / 24)} วันที่แล้ว`}
+                    </b>{' '}
+                    — ช่วยแน่ใจว่า<b>ตอนนี้ยังท่วมอยู่จริง</b>ก่อนส่งนะครับ
+                    คนที่กำลังจะขับผ่านจะใช้รูปนี้ตัดสินใจ ถ้าไม่แน่ใจ
+                    ถ่ายใหม่ตรงจุดจะช่วยได้มากกว่า
+                  </p>
                 )}
                 <p className="mt-1 text-xs text-slate-500">
                   ระบบจะลบข้อมูล EXIF (รวมพิกัดกล้อง) ออกก่อนบันทึก

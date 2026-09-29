@@ -94,6 +94,33 @@ check("สำเร็จ -> ได้เส้นทาง และล้า�
 check("สาเหตุที่บันทึกไม่มีคีย์ปนอยู่", "test-key" not in str(routing.LAST_ORS_FAILURE))
 settings.ors_api_key = ""
 
+# ------------------------------------------------- avoid areas over an endpoint
+# ORS refuses the whole request (404 code 2010) when the start or finish sits
+# inside an avoided area, so those areas are dropped before asking.
+def ring(w, s, e, n):
+    return [[[w, s], [e, s], [e, n], [w, n], [w, s]]]
+
+
+OVER_ORIGIN = ring(100.74, 13.71, 100.76, 13.73)   # contains (13.72, 100.75)
+OVER_DEST = ring(100.59, 13.66, 100.62, 13.68)     # contains (13.668, 100.604)
+MIDWAY = ring(100.68, 13.69, 100.70, 13.71)        # contains neither
+
+both = {"type": "MultiPolygon", "coordinates": [OVER_ORIGIN, MIDWAY, OVER_DEST]}
+kept = routing.drop_polygons_containing(both, [A, B])
+check("ทิ้งพื้นที่ที่คลุมต้นทางและปลายทาง เหลือแต่ที่อยู่ระหว่างทาง",
+      kept is not None and kept["coordinates"] == [MIDWAY], kept)
+
+only_origin = {"type": "MultiPolygon", "coordinates": [OVER_ORIGIN]}
+check("ถ้าเหลือศูนย์พื้นที่ -> คืน None (ไม่ส่งลิสต์ว่างไปให้ ORS)",
+      routing.drop_polygons_containing(only_origin, [A, B]) is None)
+check("ไม่มีพื้นที่มาตั้งแต่ต้น -> None", routing.drop_polygons_containing(None, [A, B]) is None)
+check("จุดนอกพื้นที่ -> ไม่ถูกทิ้ง",
+      routing.drop_polygons_containing({"type": "MultiPolygon", "coordinates": [MIDWAY]},
+                                       [A, B])["coordinates"] == [MIDWAY])
+check("จุดในพื้นที่จริง ๆ ตรวจเจอ (ray casting ไม่ใช่แค่กรอบสี่เหลี่ยม)",
+      routing._point_in_ring(13.72, 100.75, OVER_ORIGIN[0])
+      and not routing._point_in_ring(13.72, 100.75, MIDWAY[0]))
+
 print()
 print("=" * 60)
 print(f"{len(fails)} FAILED" if fails else "ALL ORS-DIAGNOSTIC CHECKS PASSED")

@@ -46,9 +46,14 @@ check("empty area yields no polygons",
 s.close()
 
 with TestClient(app) as c:
+    # Endpoints either side of the 70 cm report at 13.682/100.590, so the
+    # flooded area lies *between* them. It used to run to the 45 cm report at
+    # 13.806/100.596 — which is the destination itself, and an avoided area
+    # over an endpoint is now dropped (ORS refuses the whole request), so that
+    # route no longer has anything to steer around.
     r = c.post("/api/route/check", json={
-        "origin": {"lat": 13.7650, "lng": 100.6360},
-        "destination": {"lat": 13.8060, "lng": 100.5950}})
+        "origin": {"lat": 13.6400, "lng": 100.5910},
+        "destination": {"lat": 13.7300, "lng": 100.5910}})
     check("route check still succeeds without an ORS key", r.status_code == 200, r.text[:200])
     body = r.json()
     check("verdict is risky or worse", body["verdict"] in ("risky", "blocked"), body["verdict"])
@@ -57,6 +62,16 @@ with TestClient(app) as c:
     check("no phantom avoidance route was added",
           all("เลี่ยงน้ำท่วม" not in r["label"] for r in body["routes"]),
           [r["label"] for r in body["routes"]])
+
+    # Water at the destination: nothing to route around, and saying "set up
+    # OpenRouteService" there would promise a detour that cannot exist.
+    r = c.post("/api/route/check", json={
+        "origin": {"lat": 13.7650, "lng": 100.6360},
+        "destination": {"lat": 13.8060, "lng": 100.5950}})
+    body = r.json()
+    check("น้ำท่วมอยู่ที่ปลายทางเอง -> ไม่อ้างเรื่องทางเลี่ยง",
+          "OpenRouteService" not in (body["degraded"] or ""), body["degraded"])
+    check("และยังตอบคำตัดสินตามปกติ", body["verdict"] in ("risky", "blocked"), body["verdict"])
 
     # A clear route must not trigger avoidance logic or its warning at all.
     r2 = c.post("/api/route/check", json={

@@ -206,7 +206,11 @@ def avoid_polygons(db: Session, bbox: tuple[float, float, float, float]) -> dict
 
 def road_avoid_polygons(analyses: list) -> dict | None:
     """Small boxes around the confident, bad flooded stretches on the routes
-    found so far, so a detour is steered off them rather than back onto them."""
+    found so far, so a detour is steered off them rather than back onto them.
+
+    Boxes that would swallow an endpoint are dropped later, by
+    `drop_polygons_containing` -- see the note there.
+    """
     polygons = []
     seen = set()
     pad = 0.0004  # about 40 m
@@ -239,6 +243,35 @@ def _point_at_km(path: list[tuple[float, float]], km: float) -> tuple[float, flo
             return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
         done += step
     return path[-1]
+
+
+def _point_in_ring(lat: float, lng: float, ring: list) -> bool:
+    """Ray casting. `ring` is GeoJSON order: [lng, lat] pairs."""
+    inside = False
+    for (x1, y1), (x2, y2) in zip(ring, ring[1:]):
+        if (y1 > lat) != (y2 > lat):
+            x_at = x1 + (lat - y1) * (x2 - x1) / (y2 - y1)
+            if lng < x_at:
+                inside = not inside
+    return inside
+
+
+def drop_polygons_containing(polygons: dict | None,
+                             points: list[tuple[float, float]]) -> dict | None:
+    """Remove any avoid-area that contains the start or the finish.
+
+    OpenRouteService answers 404 code 2010 -- no routable point found -- when
+    an endpoint sits inside an avoided area, and that failure costs the whole
+    detour, not just that one area. It happened on the first real route tried:
+    the water began 50 m from the origin, so the box around it covered the
+    origin. You cannot be routed around the road you are standing on; the
+    honest answer there is the verdict, which already says not to go.
+    """
+    if not polygons:
+        return None
+    kept = [rings for rings in polygons["coordinates"]
+            if not any(_point_in_ring(lat, lng, rings[0]) for lat, lng in points)]
+    return {"type": "MultiPolygon", "coordinates": kept} if kept else None
 
 
 def _merge_polygons(*sources: dict | None) -> dict | None:
@@ -586,10 +619,13 @@ async def check_route(db: Session, origin: tuple[float, float], dest: tuple[floa
         # Reported points always; satellite outlines only where the feed
         # actually reached, which today is the north and northeast. Absent
         # there, the reported points still steer the detour.
-        polygons = _merge_polygons(
-            avoid_polygons(db, search_bbox),
-            road_avoid_polygons(analyses),
-            await flood_extent.avoid_near(search_bbox),
+        polygons = drop_polygons_containing(
+            _merge_polygons(
+                avoid_polygons(db, search_bbox),
+                road_avoid_polygons(analyses),
+                await flood_extent.avoid_near(search_bbox),
+            ),
+            [origin, dest],
         )
         if polygons and settings.ors_api_key:
             detour = await _ors_route(origin, dest, polygons)

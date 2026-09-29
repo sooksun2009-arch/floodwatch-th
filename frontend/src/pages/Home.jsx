@@ -9,6 +9,7 @@ const MapView = lazy(() => import('../components/MapView'))
 import CameraModal from '../components/CameraModal'
 import ChatWidget from '../components/ChatWidget'
 import ReportModal from '../components/ReportModal'
+import SurveyCard from '../components/SurveyCard'
 import { useT } from '../i18n'
 
 function RadarCaption() {
@@ -78,7 +79,11 @@ function SafetyNotice() {
       <span>
         <span dangerouslySetInnerHTML={{ __html: t('safety.body') }} />
       </span>
-      <span className="ml-auto flex items-center gap-1.5 whitespace-nowrap">
+      {/* Wraps between its pieces, never inside one. This was a single
+          nowrap line 455px wide, which on a 390px phone widened the whole
+          page to 481px: the browser zoomed everything out to fit, and every
+          later pinch fought that. Each phrase still stays in one piece. */}
+      <span className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-x-1.5 gap-y-1 [&>*]:whitespace-nowrap">
         <span className="text-amber-200/70">{t('safety.urgent')}</span>
         <a
           href="tel:1784"
@@ -677,6 +682,8 @@ export default function Home() {
         onShowRoute={showRouteOnMap}
         onOpenCamera={openCamera}
       />
+
+      <SurveyCard blocked={reportOpen || chatOpen || Boolean(picking) || subsideMode} />
     </div>
   )
 }

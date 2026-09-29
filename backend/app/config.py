@@ -307,6 +307,12 @@ class Settings(BaseSettings):
     # leaves the endpoint closed.
     ingest_token: str = ""
 
+    # Shared secret that lets a scheduled job (keepalive.gs) download the CSV
+    # exports without a moderator login. Unset = only a signed-in moderator
+    # can export. Separate from INGEST_TOKEN so a leak of one does not open
+    # the other.
+    backup_token: str = ""
+
 
 def _safe_header(value: str, fallback: str) -> str:
     """Make a config string safe to send as an HTTP header value.

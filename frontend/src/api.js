@@ -147,6 +147,23 @@ export const api = {
     request(`/api/admin/users/${id}`, { method: 'PATCH', body: payload }),
   audit: () => request('/api/admin/audit'),
   visitSummary: () => request('/api/visits/summary'),
+  survey: (answers) => request('/api/visits/survey', { method: 'POST', body: answers }),
+  /** Fetches with the login header and hands the browser a file to save. */
+  downloadExport: async (name) => {
+    const token = getToken()
+    const resp = await fetch(`/api/admin/export/${name}.csv`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!resp.ok) throw new ApiError(`ดาวน์โหลดไม่สำเร็จ (${resp.status})`, resp.status)
+    const url = URL.createObjectURL(await resp.blob())
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `floodwatch-${name}-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  },
 
   importPaste: (payload) => request('/api/import/paste', { method: 'POST', body: payload }),
   importFile: (file, { sourceName, autoApprove, dryRun }) => {

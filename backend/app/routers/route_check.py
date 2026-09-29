@@ -12,6 +12,7 @@ from ..rain import route_rain
 from ..routing import check_route
 from ..schemas import GeocodeOut, LatLng, RouteCheckIn, RouteCheckOut
 from ..services import expire_stale_reports
+from .. import visits
 
 logger = logging.getLogger("floodwatch")
 
@@ -67,6 +68,14 @@ async def check(payload: RouteCheckIn, request: Request, db: Session = Depends(g
         )
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
+    # Which provinces people are checking, as a count. The route itself and
+    # both points are dropped here; see visits.count_route.
+    try:
+        visits.count_route(db, [origin, dest])
+    except Exception:
+        db.rollback()
+        logger.exception("นับจังหวัดของการค้นหาไม่สำเร็จ")
 
     result["origin_label"] = origin_label or payload.origin_text
     result["destination_label"] = dest_label or payload.destination_text

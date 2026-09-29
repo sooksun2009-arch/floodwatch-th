@@ -59,8 +59,40 @@ const post = (path, body) => {
   }
 }
 
+/**
+ * Where this visit came from, reduced to a label before it leaves the page.
+ * The referring URL itself is never sent: it can name a private group, a
+ * post, or a search. In-app browsers (Facebook, LINE) often send no referrer
+ * at all, so their user agent is the better tell.
+ */
+export function sourceOf(referrer = document.referrer, ua = navigator.userAgent) {
+  if (/FBAN|FBAV|FB_IAB|Instagram/i.test(ua)) return 'facebook'
+  if (/\bLine\//i.test(ua)) return 'line'
+  let host = ''
+  try {
+    host = referrer ? new URL(referrer).hostname : ''
+  } catch {
+    host = ''
+  }
+  if (!host || host === location.hostname) return 'direct'
+  if (/(^|\.)(facebook\.com|fb\.com|fb\.me|instagram\.com|messenger\.com)$/.test(host)) return 'facebook'
+  if (/(^|\.)(line\.me|line-apps\.com|naver\.jp)$/.test(host)) return 'line'
+  if (/(^|\.)google\./.test(host)) return 'google'
+  if (/(^|\.)tiktok\.com$/.test(host)) return 'tiktok'
+  if (/(^|\.)(t\.co|twitter\.com|x\.com)$/.test(host)) return 'x'
+  return 'other'
+}
+
 export function countVisit(pathname) {
-  post('/api/visits', { page: pageOf(pathname), first_today: firstToday(), token })
+  const first = firstToday()
+  post('/api/visits', {
+    page: pageOf(pathname),
+    first_today: first,
+    token,
+    // Only with the day's first open: it is where the person arrived from,
+    // not where each later click inside the app came from.
+    source: first ? sourceOf() : '',
+  })
 }
 
 /** Keeps "here now" true while a tab is open, without counting again. */

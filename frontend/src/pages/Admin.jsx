@@ -838,7 +838,7 @@ function VisitsPanel() {
                 const views = found ? found.views : 0
                 const now = new Date().getHours() === hour
                 return (
-                  <div key={hour} className="flex flex-1 flex-col items-center justify-end">
+                  <div key={hour} className="flex h-full flex-1 flex-col items-center justify-end">
                     <span className="mb-0.5 text-[9px] text-slate-500">
                       {views || ''}
                     </span>
@@ -893,8 +893,91 @@ function VisitsPanel() {
         </>
       )}
 
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Tally title={t('vis.sources')} rows={data.tallies?.source}
+          label={(k) => t(`vis.src.${k}`)} />
+        <Tally title={t('vis.provinces')} rows={data.tallies?.province} label={(k) => k} />
+        <Tally title={t('vis.surveyUse')} rows={data.tallies?.use}
+          label={(k) => t(`survey.use.${k}`)} percent />
+        <Tally title={t('vis.surveyAge')} rows={data.tallies?.age}
+          label={(k) => t(`survey.age.${k}`)} percent />
+      </div>
+
+      <BackupPanel />
+
       <p className="px-1 text-xs leading-relaxed text-slate-500">{t('vis.note')}</p>
     </div>
+  )
+}
+
+/** One ranked list of counts, as bars. */
+function Tally({ title, rows = [], label, percent = false }) {
+  const { t } = useT()
+  const total = rows.reduce((a, r) => a + r.count, 0)
+  const peak = rows.reduce((a, r) => Math.max(a, r.count), 0)
+  return (
+    <section className="card p-4">
+      <h3 className="mb-3 text-sm font-bold text-slate-200">
+        {title}
+        {percent && total > 0 && (
+          <span className="ml-1 font-normal text-slate-500">
+            · {total.toLocaleString()} {t('vis.answers')}
+          </span>
+        )}
+      </h3>
+      {rows.length === 0 ? (
+        <p className="text-xs text-slate-500">{t('vis.noData')}</p>
+      ) : (
+        <div className="space-y-1.5">
+          {rows.map((r) => (
+            <div key={r.key} className="flex items-center gap-2 text-xs">
+              <span className="w-28 shrink-0 truncate text-slate-400" title={label(r.key)}>
+                {label(r.key)}
+              </span>
+              <div className="h-3.5 flex-1 overflow-hidden rounded bg-slate-800">
+                <div className="h-full rounded bg-sky-600"
+                  style={{ width: peak ? `${(100 * r.count) / peak}%` : 0 }} />
+              </div>
+              <span className="w-14 shrink-0 text-right text-slate-300">
+                {percent && total ? `${Math.round((100 * r.count) / total)}%` : r.count.toLocaleString()}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function BackupPanel() {
+  const { t } = useT()
+  const [busy, setBusy] = useState(null)
+  const [error, setError] = useState(null)
+  const download = async (name) => {
+    setBusy(name)
+    setError(null)
+    try {
+      await api.downloadExport(name)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(null)
+    }
+  }
+  return (
+    <section className="card p-4">
+      <h3 className="mb-2 text-sm font-bold text-slate-200">{t('vis.backup')}</h3>
+      <div className="flex flex-wrap gap-2">
+        {['reports', 'visits', 'tallies'].map((name) => (
+          <button key={name} onClick={() => download(name)} disabled={busy !== null}
+            className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-50">
+            ⬇ {busy === name ? '…' : t(`vis.dl.${name}`)}
+          </button>
+        ))}
+      </div>
+      {error && <p className="mt-2 text-xs text-red-300">{error}</p>}
+      <p className="mt-2 text-xs text-slate-500">{t('vis.backupNote')}</p>
+    </section>
   )
 }
 

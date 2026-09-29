@@ -73,6 +73,93 @@ class VisitStat(Base):
     visitors: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class Tally(Base):
+    """A named counter per day: where visitors came from, which provinces
+    route checks touch, and how people answered the optional survey.
+
+    Same rule as VisitStat: a count, never a row about someone. `key` is
+    always one of the fixed labels below (or a province name from our own
+    gazetteer), so nothing a visitor typed can end up stored here.
+    """
+
+    __tablename__ = "tallies"
+    __table_args__ = (UniqueConstraint("day", "kind", "key", name="uq_tally"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    day: Mapped[str] = mapped_column(String(10), index=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    key: Mapped[str] = mapped_column(String(64))
+    count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+# Where a visitor came from, as the browser classified it. Only the label is
+# sent -- never the referring URL, which can name a private group or a post.
+SOURCES = ("facebook", "line", "google", "tiktok", "x", "direct", "other")
+
+# The optional survey. Fixed answers only, so the table can never hold text.
+SURVEY = {
+    "use": ("commute", "delivery", "home", "agency", "other"),
+    "age": ("u18", "18_24", "25_34", "35_44", "45_54", "55p"),
+}
+
+
+def bump(db: Session, kind: str, key: str) -> None:
+    """Add one to today's counter. Does not commit; the caller does."""
+    day = _now().strftime("%Y-%m-%d")
+    row = db.execute(
+        select(Tally).where(Tally.day == day, Tally.kind == kind, Tally.key == key)
+    ).scalar_one_or_none()
+    if row is None:
+        row = Tally(day=day, kind=kind, key=key, count=0)
+        db.add(row)
+        db.flush()
+    row.count += 1
+
+
+_provinces: list[tuple[str, float, float]] | None = None
+
+
+def province_of(db: Session, lat: float, lng: float) -> str | None:
+    """Nearest province centre. Approximate near borders, which is fine for a
+    chart about where people are looking -- and it means the point itself is
+    thrown away the moment this returns."""
+    global _provinces
+    from .geo import haversine_km, in_thailand
+    from .models import Area
+
+    if not in_thailand(lat, lng):
+        return None
+    if not _provinces:
+        rows = db.query(Area).filter(Area.kind == "province").all()
+        _provinces = [(a.name_th, a.lat, a.lng) for a in rows
+                      if a.lat is not None and a.lng is not None]
+    if not _provinces:
+        return None
+    return min(_provinces, key=lambda p: haversine_km(lat, lng, p[1], p[2]))[0]
+
+
+def count_route(db: Session, points: list[tuple[float, float]]) -> None:
+    """One route check, counted once for each province it starts or ends in.
+
+    The two ends are counted separately and never as a pair: a pair of
+    provinces per search, day after day, starts to look like a travel log.
+    """
+    names = {province_of(db, lat, lng) for lat, lng in points} - {None}
+    for name in names:
+        bump(db, "province", name)
+    db.commit()
+
+
+def record_survey(db: Session, answers: dict) -> int:
+    counted = 0
+    for question, value in answers.items():
+        if value in SURVEY.get(question, ()):
+            bump(db, f"survey_{question}", value)
+            counted += 1
+    db.commit()
+    return counted
+
+
 _online: dict[str, float] = {}
 
 
@@ -91,8 +178,12 @@ def online_now() -> int:
     return sum(1 for seen in _online.values() if now - seen <= ONLINE_TTL_SEC)
 
 
-def record(db: Session, page: str, first_today: bool) -> None:
-    """Add one view, and one visitor if the browser says it is new today."""
+def record(db: Session, page: str, first_today: bool, source: str | None = None) -> None:
+    """Add one view, and one visitor if the browser says it is new today.
+
+    Where they came from is counted with the visitor, not the view, so a
+    person reading five pages is one arrival from Facebook rather than five.
+    """
     now = _now()
     day = now.strftime("%Y-%m-%d")
     page = page if page in PAGES else "other"
@@ -109,6 +200,8 @@ def record(db: Session, page: str, first_today: bool) -> None:
     row.views += 1
     if first_today:
         row.visitors += 1
+        if source:
+            bump(db, "source", source if source in SOURCES else "other")
     db.commit()
 
 
@@ -140,7 +233,25 @@ def summary(db: Session, days: int = 14) -> dict:
         .order_by(func.sum(VisitStat.views).desc())
     ).all()
 
+    since = (_now() - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+
+    def tally(kind: str, from_day: str | None, limit: int = 20) -> list[dict]:
+        query = select(Tally.key, func.sum(Tally.count)).where(Tally.kind == kind)
+        if from_day:
+            query = query.where(Tally.day >= from_day)
+        rows = db.execute(query.group_by(Tally.key)
+                          .order_by(func.sum(Tally.count).desc()).limit(limit)).all()
+        return [{"key": k, "count": int(n or 0)} for k, n in rows]
+
     return {
+        "tallies": {
+            "source": tally("source", since),
+            "province": tally("province", since),
+            # All time: answers trickle in, and a two-week window would keep
+            # the sample too small to mean anything.
+            "use": tally("survey_use", None),
+            "age": tally("survey_age", None),
+        },
         "online_now": online_now(),
         "today": today,
         "days": [{"day": d, "views": int(v or 0), "visitors": int(u or 0)}

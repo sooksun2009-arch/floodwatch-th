@@ -432,7 +432,31 @@ const check = (name, ok, extra = '') => {
   check('เครดิต OpenStreetMap ไม่ถูกปุ่มบัง (บนมือถือ)',
         !attrPhone.missing && attrPhone.hits.length === 0,
         attrPhone.missing ? 'ไม่พบเครดิตบนแผนที่' : attrPhone.hits.join(' · '))
-  await page.setViewport({ width: 1400, height: 900 })
+
+  // A real phone, not a narrow desktop window: with isMobile the browser lays
+  // the page out as wide as its widest element and zooms the lot out to fit.
+  // One nowrap line in the safety notice did that on every phone (390px
+  // screen, 481px page), which a desktop-mode check never sees.
+  for (const width of [360, 390]) {
+    await page.setViewport({ width, height: 800, isMobile: true, hasTouch: true })
+    // Not networkidle: a map streaming tiles may never go quiet for 500ms.
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await new Promise((r) => setTimeout(r, 2500))
+    const fit = await page.evaluate(() => ({
+      inner: window.innerWidth,
+      scroll: document.documentElement.scrollWidth,
+      wide: [...document.querySelectorAll('body *')]
+        .filter((el) => el.getBoundingClientRect().right > window.visualViewport.width + 2)
+        .slice(0, 3)
+        .map((el) => `${el.tagName}.${String(el.className).slice(0, 50)}`),
+    }))
+    check(`มือถือกว้าง ${width}px: หน้าไม่กว้างเกินจอ (ไม่ถูกย่อทั้งหน้า)`,
+          fit.inner === width && fit.scroll <= width, JSON.stringify(fit))
+  }
+  await page.setViewport({ width: 1400, height: 900, isMobile: false, hasTouch: false })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForFunction(() => window.__fwMap?.loaded?.(), { timeout: 30000 }).catch(() => {})
+  await new Promise((r) => setTimeout(r, 1500))
   await new Promise((r) => setTimeout(r, 1500))
 
   // Rain features are off until a key is configured, and the button that
@@ -559,11 +583,11 @@ const check = (name, ok, extra = '') => {
 
     const pressed = await page.evaluate(() => {
       const button = [...document.querySelectorAll('button')]
-        .find((b) => b.textContent.trim() === 'น้ำลดแล้ว')
+        .find((b) => b.textContent.trim() === 'แจ้งน้ำลด')
       button?.click()
       return Boolean(button)
     })
-    check('มีปุ่ม "น้ำลดแล้ว" แยกอยู่นอก popup', pressed)
+    check('มีปุ่ม "แจ้งน้ำลด" แยกอยู่นอก popup', pressed)
 
     if (pressed) {
       await new Promise((r) => setTimeout(r, 500))
@@ -575,6 +599,7 @@ const check = (name, ok, extra = '') => {
       // side), not a real vote — and would fail the count check below for a
       // reason that has nothing to do with this button.
       let picked = null
+      let pickedBefore = null
       if (state.layers['report-dots'] < 2) {
         // Only one pin on screen and the earlier block already voted on it —
         // there is nothing left to click that would exercise a real vote.
@@ -582,26 +607,48 @@ const check = (name, ok, extra = '') => {
         // the filter test below when there are not enough levels to compare.
         console.log('      (ข้ามส่วนเช็คตัวเลข: มีหมุดให้แตะแค่จุดเดียว)')
       } else {
-        picked = await page.evaluate((avoidId) => {
+        // The count is read *before* the tap. Reading it after raced the vote
+        // the tap had already sent. And the least-disputed pin is taken: the
+        // server keeps one vote per person per pin, so a pin this machine
+        // voted on in an earlier run would update that vote, not add one.
+        // A voter this server has never seen. One vote per person per pin is
+        // the rule, so after a few runs every pin has this machine's vote on
+        // it and a repeat run could only update one, never add one.
+        await page.setExtraHTTPHeaders({
+          'x-forwarded-for': `10.${Date.now() % 250}.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`,
+        })
+        const choice = await page.evaluate(async (avoidId) => {
           const map = window.__fwMap
           const found = map.queryRenderedFeatures({ layers: ['report-dots'] })
-          const feature = found.find((f) => f.properties.id !== avoidId) || null
-          if (!feature) return null
-          const point = map.project(feature.geometry.coordinates)
+            .filter((f) => f.properties.id !== avoidId)
+            // Only a pin that is the one on top at its own spot: the layer's
+            // click handler re-queries the point, so tapping a pin hidden
+            // under another sends the vote to the one above it.
+            .filter((f) => {
+              const top = map.queryRenderedFeatures(map.project(f.geometry.coordinates),
+                { layers: ['report-dots'] })[0]
+              return top && top.properties.id === f.properties.id
+            })
+          let best = null
+          for (const f of found) {
+            const r = await fetch(`/api/reports/${f.properties.id}`).then((x) => x.json())
+            if (!best || r.dispute_count < best.before.dispute_count) best = { f, before: r }
+          }
+          if (!best) return null
+          const point = map.project(best.f.geometry.coordinates)
           map.fire('click', {
-            lngLat: map.unproject(point), point, features: [feature],
+            lngLat: map.unproject(point), point, features: [best.f],
             originalEvent: new MouseEvent('click'),
           })
-          return feature.properties.id
+          return { id: best.f.properties.id, before: best.before }
         }, openedId)
+        picked = choice?.id || null
+        pickedBefore = choice?.before || null
         check('มีหมุดอีกจุดให้แตะ (คนละจุดกับที่โหวตไปแล้วข้างบน)', Boolean(picked), picked)
       }
 
       if (picked) {
-        const before = await page.evaluate(
-          (id) => fetch(`/api/reports/${id}`).then((r) => r.json()),
-          picked,
-        )
+        const before = pickedBefore
         let text = ''
         for (let i = 0; i < 20; i++) {
           text = await page.evaluate(
@@ -622,6 +669,7 @@ const check = (name, ok, extra = '') => {
           `ก่อน ${before.dispute_count} หลัง ${after.dispute_count}`,
         )
 
+        await page.setExtraHTTPHeaders({})
         const modeAfter = await page.evaluate(() => document.body.innerText)
         check(
           'โหมดปิดเองหลังแตะหนึ่งครั้ง (ไม่ค้างรอแตะซ้ำ)',

@@ -1,11 +1,11 @@
 """Visit counting. Public to write, moderators only to read."""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from .. import visits
 from ..database import get_db
-from ..deps import require_moderator
+from ..deps import client_ip, enforce_limit, require_moderator
 
 router = APIRouter(prefix="/api/visits", tags=["visits"])
 
@@ -19,13 +19,30 @@ class VisitIn(BaseModel):
     # Made up by the tab for this session. Held in memory for ninety seconds to
     # answer "how many are here now" and never written down.
     token: str = Field(default="", max_length=64)
+    # A label the browser picked ("facebook", "line", ...), never the URL.
+    source: str = Field(default="", max_length=16)
 
 
 @router.post("", status_code=204)
 def record(payload: VisitIn, db: Session = Depends(get_db)) -> None:
     if payload.token:
         visits.mark_online(payload.token)
-    visits.record(db, payload.page, payload.first_today)
+    visits.record(db, payload.page, payload.first_today, payload.source or None)
+
+
+class SurveyIn(BaseModel):
+    use: str | None = Field(default=None, max_length=16)
+    age: str | None = Field(default=None, max_length=16)
+
+
+@router.post("/survey", status_code=204)
+def survey(payload: SurveyIn, request: Request, db: Session = Depends(get_db)) -> None:
+    """The optional two-question survey. Answers outside the fixed lists are
+    dropped rather than refused -- there is nothing useful to tell a person
+    about why their click did not count."""
+    # The address is used for this limit in memory only; it is not stored.
+    enforce_limit(f"survey:{client_ip(request)}", 5)
+    visits.record_survey(db, {"use": payload.use, "age": payload.age})
 
 
 class PingIn(BaseModel):

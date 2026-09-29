@@ -534,3 +534,82 @@ function alertOnce(key, subject, body) {
 function clearAlert(key) {
   PropertiesService.getScriptProperties().deleteProperty('alerted_' + key);
 }
+
+
+// ===================================================================== สำรองข้อมูล
+//
+// ฐานข้อมูลอยู่ที่ Neon แพ็กฟรีย้อนเวลากู้คืนได้แค่ช่วงสั้น ๆ ส่วนนี้ดาวน์โหลด
+// CSV ทุกคืนเก็บไว้ใน Google Drive โฟลเดอร์ "FloodWatch Backup" แยกตามวันที่
+// (ไม่มี IP หรือชื่อผู้แจ้งในไฟล์ — เซิร์ฟเวอร์ตัดออกให้ก่อนส่ง)
+//
+// วิธีตั้ง (ทำครั้งเดียว):
+//   1. Render → Environment → เพิ่ม BACKUP_TOKEN (ตั้งเป็นข้อความสุ่มยาว ๆ) → Save
+//   2. เอาค่าเดียวกันมาใส่ช่องล่าง
+//   3. เลือกฟังก์ชัน setupBackup แล้วกด Run (จะขออนุญาตเข้า Drive ให้กดอนุญาต)
+//
+// ถ้าวางไฟล์นี้ทับของเดิม อย่าลืมใส่ INGEST_TOKEN / TELEGRAM_* กลับด้วย
+// หรือจะคัดลอกแค่ส่วนนี้ไปต่อท้ายสคริปต์เดิมก็ได้
+
+const BACKUP_TOKEN = '';
+const BACKUP_FOLDER = 'FloodWatch Backup';
+// เก็บย้อนหลังกี่วัน เก่ากว่านี้ย้ายลงถังขยะของ Drive (กู้คืนได้อีก 30 วัน)
+const BACKUP_KEEP_DAYS = 60;
+
+function setupBackup() {
+  ScriptApp.getProjectTriggers()
+    .filter((t) => t.getHandlerFunction() === 'backupToDrive')
+    .forEach((t) => ScriptApp.deleteTrigger(t));
+  // ตีสามเวลาไทย: คนใช้น้อยที่สุด และเป็นข้อมูลครบของเมื่อวาน
+  ScriptApp.newTrigger('backupToDrive').timeBased().everyDays(1).atHour(3)
+    .inTimezone('Asia/Bangkok').create();
+  const result = backupToDrive();
+  Logger.log('ตั้ง backup ทุกคืนตีสามแล้ว — ผลครั้งแรก: %s', String(result));
+  return result;
+}
+
+function backupToDrive() {
+  if (!BACKUP_TOKEN) {
+    Logger.log('ยังไม่ได้ใส่ BACKUP_TOKEN — ข้าม');
+    return 'ยังไม่ได้ใส่ BACKUP_TOKEN';
+  }
+  const folders = DriveApp.getFoldersByName(BACKUP_FOLDER);
+  const root = folders.hasNext() ? folders.next() : DriveApp.createFolder(BACKUP_FOLDER);
+  const day = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
+
+  const saved = [];
+  for (const name of ['reports', 'visits', 'tallies']) {
+    const res = UrlFetchApp.fetch(BASE_URL + '/api/admin/export/' + name + '.csv', {
+      headers: { Authorization: 'Bearer ' + BACKUP_TOKEN },
+      muteHttpExceptions: true,
+    });
+    const code = res.getResponseCode();
+    if (code !== 200) {
+      // ไม่ใส่เนื้อหาคำตอบลงอีเมล: กันไม่ให้อะไรที่ไม่ควรหลุดติดไปด้วย
+      alertOnce('backup', 'FloodWatch: สำรองข้อมูลไม่สำเร็จ',
+        'ดาวน์โหลด ' + name + '.csv ได้ HTTP ' + code +
+        (code === 401 ? ' — BACKUP_TOKEN ในสคริปต์ไม่ตรงกับใน Render' : ''));
+      return 'ล้มเหลวที่ ' + name + ' (HTTP ' + code + ')';
+    }
+    const fileName = 'floodwatch-' + name + '-' + day + '.csv';
+    const old = root.getFilesByName(fileName);
+    while (old.hasNext()) old.next().setTrashed(true);  // รันซ้ำวันเดียวกัน = แทนที่
+    root.createFile(res.getBlob().setName(fileName));
+    saved.push(name);
+  }
+  clearAlert('backup');
+
+  const cutoff = Date.now() - BACKUP_KEEP_DAYS * 24 * 3600 * 1000;
+  const files = root.getFiles();
+  let trashed = 0;
+  while (files.hasNext()) {
+    const f = files.next();
+    if (f.getName().indexOf('floodwatch-') === 0 && f.getDateCreated().getTime() < cutoff) {
+      f.setTrashed(true);
+      trashed++;
+    }
+  }
+  const line = 'สำรองแล้ว ' + saved.join(', ') + ' (' + day + ')' +
+    (trashed ? ' · ลบไฟล์เก่า ' + trashed + ' ไฟล์' : '');
+  Logger.log(line);
+  return line;
+}

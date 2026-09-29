@@ -83,6 +83,12 @@ services:
       - key: INGEST_TOKEN
         generateValue: true
 
+      # Lets keepalive.gs download the nightly CSV backup (reports, visits,
+      # tallies) into Google Drive without a moderator login. Unset = only a
+      # signed-in moderator can export, from the admin page.
+      - key: BACKUP_TOKEN
+        generateValue: true
+
       # Longdo Weather: rain radar, short-range forecast and the traffic
       # cameras that currently have rain on them. Free key from
       # api.longdo.com/console, product "Longdo Weather", restricted to this

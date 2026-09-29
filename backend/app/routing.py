@@ -20,7 +20,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from . import flood_extent
+from . import flood_extent, floodroads
 from .config import settings
 from .geo import haversine_km, in_thailand
 from .models import (
@@ -204,6 +204,43 @@ def avoid_polygons(db: Session, bbox: tuple[float, float, float, float]) -> dict
     return {"type": "MultiPolygon", "coordinates": polygons}
 
 
+def road_avoid_polygons(analyses: list) -> dict | None:
+    """Small boxes around the confident, bad flooded stretches on the routes
+    found so far, so a detour is steered off them rather than back onto them."""
+    polygons = []
+    seen = set()
+    pad = 0.0004  # about 40 m
+    for analysis in analyses:
+        for road in analysis.roads:
+            if not road["confident"] or road["sedan"] not in ("blocked", "risky"):
+                continue
+            key = (road["name"], road["along_km"])
+            if key in seen:
+                continue
+            seen.add(key)
+            # Where on the path it is: good enough to box the stretch.
+            lat, lng = _point_at_km(analysis.geometry.path, road["along_km"])
+            half = max(road.get("length_m", 0) / 2000, 0.05) / EARTH_KM_PER_DEG
+            ring = [[lng - half - pad, lat - half - pad], [lng + half + pad, lat - half - pad],
+                    [lng + half + pad, lat + half + pad], [lng - half - pad, lat + half + pad]]
+            ring.append(ring[0])
+            polygons.append([ring])
+            if len(polygons) >= 40:
+                break
+    return {"type": "MultiPolygon", "coordinates": polygons} if polygons else None
+
+
+def _point_at_km(path: list[tuple[float, float]], km: float) -> tuple[float, float]:
+    done = 0.0
+    for a, b in zip(path, path[1:]):
+        step = path_length_km([a, b])
+        if done + step >= km and step > 0:
+            t = (km - done) / step
+            return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+        done += step
+    return path[-1]
+
+
 def _merge_polygons(*sources: dict | None) -> dict | None:
     """One MultiPolygon from several, because ORS takes a single avoid shape.
 
@@ -310,6 +347,8 @@ class RouteAnalysis:
     cameras: list[tuple[Camera, int, float]] = field(default_factory=list)
     # Gauges near the route that are currently over their bank.
     stations: list[tuple[WaterStation, int, float]] = field(default_factory=list)
+    # Flooded stretches along the route, from Floodboard.
+    roads: list[dict] = field(default_factory=list)
     verdict: str = "clear"
     worst_level: str | None = None
     score: float = 0.0
@@ -340,7 +379,8 @@ def _verdict_for(levels: list[str]) -> tuple[str, str | None]:
 
 
 def analyse_route(db: Session, geometry: RouteGeometry, corridor_m: int,
-                  camera_corridor_m: int, min_confidence: float) -> RouteAnalysis:
+                  camera_corridor_m: int, min_confidence: float,
+                  road_segments: list[dict] | None = None) -> RouteAnalysis:
     """Find flood reports and cameras inside the corridor around one route."""
     corridor_km = corridor_m / 1000
     camera_km = camera_corridor_m / 1000
@@ -399,17 +439,21 @@ def analyse_route(db: Session, geometry: RouteGeometry, corridor_m: int,
             near_stations.append((gauge, int(round(dist_km * 1000)), round(along_km, 2)))
     near_stations.sort(key=lambda item: item[2])
 
-    verdict, worst = _verdict_for([o.report.level for o in obstacles])
+    roads = floodroads.along_route(road_segments or [], geometry.path)
+
+    verdict, worst = _verdict_for([o.report.level for o in obstacles]
+                                  + [r["level"] for r in roads])
 
     # Ranking score for picking a recommended route: penalise blocking severity
     # heavily, then obstacle count, then travel distance.
     score = (VERDICT_ORDER[verdict] * 1000
              + len(obstacles) * 10
+             + len(roads) * 5
              + geometry.distance_km)
 
     return RouteAnalysis(geometry=geometry, obstacles=obstacles, cameras=on_route_cams,
-                         stations=near_stations, verdict=verdict, worst_level=worst,
-                         score=score)
+                         stations=near_stations, roads=roads, verdict=verdict,
+                         worst_level=worst, score=score)
 
 
 def build_advice(analysis: RouteAnalysis, degraded: str | None) -> str:
@@ -430,6 +474,20 @@ def build_advice(analysis: RouteAnalysis, degraded: str | None) -> str:
                          f"{LEVEL_TH.get(r.level, r.level)}.{depth}{confirms}")
         if len(analysis.obstacles) > 8:
             lines.append(f"• และอีก {len(analysis.obstacles) - 8} จุด")
+
+    if analysis.roads:
+        sedan_th = {"blocked": "รถเก๋งผ่านไม่ได้", "risky": "รถเก๋งเสี่ยง",
+                    "caution": "รถเก๋งผ่านได้ ระวัง", "ok": "ผ่านได้"}
+        lines.append("")
+        lines.append(f"ถนนน้ำท่วมตามเส้นทาง {len(analysis.roads)} ช่วง (จาก Floodboard):")
+        for road in analysis.roads[:8]:
+            depth = f" ลึกราว {road['depth_cm']} ซม." if road.get("depth_cm") else ""
+            unsure = "" if road["confident"] else " (ความมั่นใจต่ำ)"
+            closed = " ปิดการจราจร" if road["closed"] else ""
+            lines.append(f"• กม. {road['along_km']:.1f} — {road['name'] or 'ไม่ทราบชื่อถนน'}: "
+                         f"{sedan_th.get(road['sedan'], road['sedan'])}{closed}.{depth}{unsure}")
+        if len(analysis.roads) > 8:
+            lines.append(f"• และอีก {len(analysis.roads) - 8} ช่วง")
 
     if analysis.cameras:
         lines.append("")
@@ -478,7 +536,11 @@ async def check_route(db: Session, origin: tuple[float, float], dest: tuple[floa
     min_confidence = settings.route_min_confidence if min_confidence is None else min_confidence
 
     geometries, degraded = await fetch_routes(origin, dest, alternatives)
-    analyses = [analyse_route(db, geo, corridor_m, camera_corridor_m, min_confidence)
+    # Loaded once per check and shared by every candidate route. None when the
+    # feed is off or has never loaded; the check goes on without it.
+    road_segments = await floodroads.segments()
+    analyses = [analyse_route(db, geo, corridor_m, camera_corridor_m, min_confidence,
+                              road_segments)
                 for geo in geometries]
 
     # If the best route so far still runs through water, ask a routing engine
@@ -505,13 +567,14 @@ async def check_route(db: Session, origin: tuple[float, float], dest: tuple[floa
         # there, the reported points still steer the detour.
         polygons = _merge_polygons(
             avoid_polygons(db, search_bbox),
+            road_avoid_polygons(analyses),
             await flood_extent.avoid_near(search_bbox),
         )
         if polygons and settings.ors_api_key:
             detour = await _ors_route(origin, dest, polygons)
             if detour:
                 detour_analysis = analyse_route(db, detour, corridor_m, camera_corridor_m,
-                                                min_confidence)
+                                                min_confidence, road_segments)
                 # Reject a "safe" detour that is absurdly long — past some point
                 # waiting the water out beats driving an extra hour.
                 if detour_analysis.geometry.distance_km <= analyses[0].geometry.distance_km * 2.5:
@@ -584,6 +647,9 @@ async def check_route(db: Session, origin: tuple[float, float], dest: tuple[floa
                         "station": station_to_out(gauge),
                     } for gauge, dist_m, along_km in a.stations
                 ],
+                "roads": a.roads,
             } for a in analyses
         ],
+        "roads_attribution": (floodroads.ATTRIBUTION
+                              if any(a.roads for a in analyses) else None),
     }

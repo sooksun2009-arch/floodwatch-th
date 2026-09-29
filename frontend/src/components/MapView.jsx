@@ -23,6 +23,7 @@ import {
   LEVELS, SITUATIONS, api, levelLabel, reportAge, safePhotoUrl, timeAgo,
 } from '../api'
 import { depthText, useT } from '../i18n'
+import { FLOOD_ROAD_BANDS } from '../floodRoads'
 
 // Raster OpenStreetMap tiles need no API key, which keeps the app free to run.
 // For production traffic, point VITE_MAP_STYLE at a tile provider you have an
@@ -221,6 +222,9 @@ const situationMatch = [
   '#64748b',
 ]
 
+// What Floodboard covers, roughly: Bangkok and the provinces around it.
+const FLOOD_ROADS_BOX = [100.2, 13.4, 101.0, 14.2]
+
 export default function MapView({
   reports = [],
   cameras = [],
@@ -240,6 +244,7 @@ export default function MapView({
   subsideMode = false,
   showRadar = false,
   showFloodExtent = false,
+  showFloodRoads = true,
   selected = EMPTY_SET,
   fitKey = null,
   // { lat, lng, zoom, key }: fly there. `key` changes to repeat the same spot.
@@ -274,6 +279,13 @@ export default function MapView({
   // sees the mode's current value rather than the one captured at mount.
   const subsideModeRef = useRef(subsideMode)
   subsideModeRef.current = subsideMode
+  const pickModeRef = useRef(pickMode)
+  pickModeRef.current = pickMode
+  const showRoadsRef = useRef(showFloodRoads)
+  showRoadsRef.current = showFloodRoads
+  const roadsLoadedRef = useRef(0)
+  const roadsReloadRef = useRef(null)
+  const roadsTimerRef = useRef(null)
 
   useEffect(() => {
     if (mapRef.current) return undefined
@@ -376,6 +388,31 @@ export default function MapView({
         // thing being read. Slightly more opaque than rain because a flooded
         // area is a fact about the ground rather than the sky.
         paint: { 'raster-opacity': 0.5 },
+      })
+
+      // Flooded road stretches from Floodboard's open data (CC BY 4.0), fetched
+      // through our server's shared cache. Loaded only when the view reaches
+      // the area the feed covers, so a phone looking at Chiang Mai never pays
+      // for Bangkok's roads.
+      map.addSource('flood-roads', {
+        type: 'geojson',
+        data: emptyFC,
+        attribution:
+          '<a href="https://floodboard.org" target="_blank" rel="noopener">Floodboard</a> (CC BY 4.0)',
+      })
+      map.addLayer({
+        id: 'flood-roads-line',
+        type: 'line',
+        source: 'flood-roads',
+        minzoom: 9,
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': ['match', ['get', 'band'], ...FLOOD_ROAD_BANDS.flatMap(([k, c]) => [k, c]), '#94a3b8'],
+          'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2, 14, 5, 17, 9],
+          // Fainter when the feed itself is less sure. Most of it is inferred,
+          // and a confident red line for a guess is a claim the data does not make.
+          'line-opacity': ['interpolate', ['linear'], ['get', 'conf'], 0.3, 0.35, 0.5, 0.7, 0.8, 0.95],
+        },
       })
 
       map.addLayer({
@@ -737,6 +774,74 @@ export default function MapView({
     reportCentre()
     map.on('moveend', reportCentre)
 
+    map.on('click', 'flood-roads-line', (event) => {
+      // Placing a pin or marking water gone: the tap belongs to that mode.
+      if (pickModeRef.current || subsideModeRef.current) return
+      // A pin drawn over the road wins; it has its own popup.
+      if (map.queryRenderedFeatures(event.point, { layers: ['report-dots', 'station-dots'] }).length) return
+      const props = event.features?.[0]?.properties
+      if (!props) return
+      const tr = tRef.current
+      const root = document.createElement('div')
+      root.style.cssText = 'font-size:13px;line-height:1.5;max-width:230px'
+      const line = (text, css) => {
+        if (!text && text !== 0) return
+        const node = document.createElement('div')
+        node.textContent = String(text)
+        if (css) node.style.cssText = css
+        root.appendChild(node)
+      }
+      const name = langRef.current === 'en' && props.name_en ? props.name_en : props.name
+      line(name || tr('roads.unnamed'), 'font-weight:700')
+      const color = FLOOD_ROAD_BANDS.find(([k]) => k === props.band)?.[1] || '#94a3b8'
+      line(props.closed === true || props.closed === 'true'
+        ? tr('roads.closed')
+        : props.depth_cm !== undefined && props.depth_cm !== null && props.depth_cm !== ''
+          ? tr('roads.depth', { cm: Math.round(Number(props.depth_cm)) })
+          : tr('roads.depthUnknown'), `color:${color};font-weight:600`)
+      line(`${tr('roads.sedan')}: ${tr(`roads.v.${props.sedan}`)} · ${tr('roads.moto')}: ${tr(`roads.v.${props.motorbike}`)}`)
+      const conf = Math.round(Number(props.conf) * 100)
+      line(`${tr('roads.conf', { n: conf })}${props.estimated === true || props.estimated === 'true' ? ` · ${tr('roads.estimated')}` : ''}`,
+        'color:#94a3b8')
+      if (props.updated) {
+        const minutes = Math.max(0, Math.round((Date.now() - Number(props.updated)) / 60000))
+        line(tr('roads.updated', { ago: minutes < 60 ? tr('roads.min', { n: minutes }) : tr('roads.hr', { n: Math.round(minutes / 60) }) }), 'color:#94a3b8')
+      }
+      if (props.sources) line(tr('roads.sources', { s: props.sources }), 'color:#64748b')
+      line(tr('roads.credit'), 'color:#64748b;margin-top:.25rem')
+      popup.setLngLat(event.lngLat).setDOMContent(root).addTo(map)
+    })
+    map.on('mouseenter', 'flood-roads-line', () => {
+      map.getCanvas().style.cursor = 'pointer'
+    })
+    map.on('mouseleave', 'flood-roads-line', () => {
+      map.getCanvas().style.cursor = pickModeRef.current ? 'crosshair' : ''
+    })
+
+    const loadRoads = () => {
+      if (!showRoadsRef.current || !map.getSource('flood-roads')) return
+      const b = map.getBounds()
+      const [w, s, e, n] = FLOOD_ROADS_BOX
+      const overlaps = b.getWest() < e && b.getEast() > w && b.getSouth() < n && b.getNorth() > s
+      if (!overlaps || map.getZoom() < 8) return
+      // The server refreshes every five minutes; asking more often gains nothing.
+      if (Date.now() - roadsLoadedRef.current < 4 * 60 * 1000) return
+      roadsLoadedRef.current = Date.now()
+      fetch('/api/flood-roads')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data && map.getSource('flood-roads')) map.getSource('flood-roads').setData(data)
+        })
+        .catch(() => {
+          roadsLoadedRef.current = 0 // try again on the next move
+        })
+    }
+    map.on('moveend', loadRoads)
+    map.on('load', loadRoads)
+    roadsReloadRef.current = loadRoads
+    const roadsTimer = setInterval(loadRoads, 5 * 60 * 1000)
+    roadsTimerRef.current = roadsTimer
+
     map.on('click', 'camera-dots', (event) => {
       const id = event.features?.[0]?.properties?.id
       if (id) handlersRef.current.onCameraClick?.(id)
@@ -762,6 +867,7 @@ export default function MapView({
     }
 
     return () => {
+      clearInterval(roadsTimerRef.current)
       map.remove()
       mapRef.current = null
       readyRef.current = false
@@ -788,6 +894,13 @@ export default function MapView({
     map.setLayoutProperty(
       'flood-extent-layer', 'visibility', showFloodExtent ? 'visible' : 'none')
   }, [showFloodExtent])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !readyRef.current || !map.getLayer('flood-roads-line')) return
+    map.setLayoutProperty('flood-roads-line', 'visibility', showFloodRoads ? 'visible' : 'none')
+    if (showFloodRoads) roadsReloadRef.current?.()
+  }, [showFloodRoads])
 
   // Picking categories shows only those. An empty selection means no choice has
   // been made, which shows everything — the map should be complete until

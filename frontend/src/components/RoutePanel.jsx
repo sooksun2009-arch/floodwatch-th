@@ -256,6 +256,54 @@ function CameraStrip({ cameras, onOpen }) {
   )
 }
 
+const SEDAN_COLOR = { blocked: '#dc2626', risky: '#f97316', caution: '#f59e0b', ok: '#22c55e' }
+
+/** Flooded stretches of road along the route, from Floodboard. */
+function RoadList({ roads, attribution }) {
+  const { t, lang } = useT()
+  if (!roads?.length) return null
+  return (
+    <div>
+      <h3 className="mb-2 text-sm font-bold text-slate-200">
+        {t('rp.roadsStep')} ({roads.length})
+      </h3>
+      <ul className="space-y-2">
+        {roads.map((road, i) => (
+          <li key={`${road.name}-${road.along_km}-${i}`} className={`card p-3 ${road.confident ? '' : 'opacity-75'}`}>
+            <div className="flex items-start gap-3">
+              <div className="flex w-14 shrink-0 flex-col items-center">
+                <span className="text-xs font-bold text-slate-400">{t('rp.kmMark')}</span>
+                <span className="text-lg font-bold leading-none" style={{ color: SEDAN_COLOR[road.sedan] || '#f59e0b' }}>
+                  {road.along_km.toFixed(1)}
+                </span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold leading-snug text-slate-100">
+                  {(lang === 'en' && road.name_en) || road.name || t('roads.unnamed')}
+                </p>
+                <p className="mt-0.5 text-sm font-medium" style={{ color: SEDAN_COLOR[road.sedan] || '#f59e0b' }}>
+                  {t('roads.sedan')}: {t(`roads.v.${road.sedan}`)}
+                  {road.closed ? ` · ${t('roads.closed')}` : ''}
+                  {road.depth_cm ? ` · ${t('roads.depth', { cm: Math.round(road.depth_cm) })}` : ''}
+                </p>
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                  <span>{t('roads.moto')}: {t(`roads.v.${road.motorbike}`)}</span>
+                  <span>{t('roads.conf', { n: Math.round(road.conf * 100) })}</span>
+                  {!road.confident && <span className="text-amber-400">{t('roads.lowConf')}</span>}
+                  {road.length_m > 0 && <span>{t('roads.length', { m: road.length_m })}</span>}
+                </div>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 px-1 text-xs text-slate-500">
+        {attribution || t('roads.credit')} · {t('roads.panelNote')}
+      </p>
+    </div>
+  )
+}
+
 function StationList({ stations }) {
   const { t, lang } = useT()
   if (!stations?.length) return null
@@ -674,6 +722,7 @@ export default function RoutePanel({
 
           <CameraStrip cameras={route?.cameras} onOpen={onOpenCamera} />
           <ObstacleList obstacles={route?.obstacles} onVote={vote} votedIds={votedIds} />
+          <RoadList roads={route?.roads} attribution={result?.roads_attribution} />
           <StationList stations={route?.stations} />
 
           <div className="flex flex-wrap gap-2">

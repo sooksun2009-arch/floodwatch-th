@@ -4,6 +4,7 @@ tmp = tempfile.mkdtemp()
 os.environ["DATABASE_URL"] = f"sqlite:///{tmp}/t.db"
 os.environ["UPLOAD_DIR"] = f"{tmp}/up"
 os.environ["JWT_SECRET"] = "t"
+os.environ["FLOODROADS_ENABLED"] = "false"  # no network in tests
 os.environ["GEOCODE_ENABLED"] = "false"
 os.environ["OSRM_BASE_URL"] = "http://127.0.0.1:9"
 os.environ["SEED_DEMO_DATA"] = "true"

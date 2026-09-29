@@ -12,6 +12,7 @@ import ReportModal from '../components/ReportModal'
 import SurveyCard from '../components/SurveyCard'
 import AreaCard from '../components/AreaCard'
 import { useT } from '../i18n'
+import { FLOOD_ROAD_BANDS } from '../floodRoads'
 
 function RadarCaption() {
   // Radar tiles are transparent where it is not raining, so a working radar
@@ -120,7 +121,7 @@ function SafetyNotice() {
   )
 }
 
-function Legend({ selected, onToggle, onReset, hasCameras }) {
+function Legend({ selected, onToggle, onReset, hasCameras, showRoads }) {
   const { t } = useT()
   // On a phone the full key covers a third of the map and sits over marker
   // popups, so it starts collapsed there and expanded on a wider screen.
@@ -183,6 +184,20 @@ function Legend({ selected, onToggle, onReset, hasCameras }) {
               )
             })}
           </ul>
+          {showRoads && (
+            <div className="mt-2 border-t border-slate-800 pt-1.5">
+              <p className="mb-1 font-semibold text-slate-400">{t('legend.roads')}</p>
+              <ul className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                {FLOOD_ROAD_BANDS.map(([key, color]) => (
+                  <li key={key} className="flex items-center gap-1.5 text-slate-300">
+                    <span className="h-1 w-4 shrink-0 rounded-full" style={{ background: color }} />
+                    <span>{t(`legend.road.${key}`)}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-[10px] leading-snug text-slate-500">{t('legend.roadsNote')}</p>
+            </div>
+          )}
           {selected.size > 0 && (
             <button
               onClick={onReset}
@@ -237,6 +252,9 @@ export default function Home() {
   const { t } = useT()
   const [radarOn, setRadarOn] = useState(false)
   const [floodLayerOn, setFloodLayerOn] = useState(false)
+  // On by default: this is road-level evidence, the thing the route verdict
+  // most needed, and it only loads when the map is over the area it covers.
+  const [roadsOn, setRoadsOn] = useState(true)
   // Categories picked in the legend. Empty means no choice made, which shows
   // everything. Kept here rather than in MapView so the choice survives the
   // map being re-rendered.
@@ -416,6 +434,7 @@ export default function Home() {
               onCenterChange={setMapCenter}
               showRadar={radarOn}
           showFloodExtent={floodLayerOn}
+          showFloodRoads={roadsOn}
               selected={selected}
               onError={setMapError}
               pickMode={Boolean(picking)}
@@ -430,6 +449,7 @@ export default function Home() {
             onToggle={toggleCategory}
             onReset={() => setSelected(new Set())}
             hasCameras={cameras.length > 0}
+            showRoads={roadsOn}
           />
           {mapError && (
             <div className="absolute inset-x-3 top-3 z-20 rounded-xl border border-red-800 bg-red-950/90 px-3 py-2 text-sm text-red-200 backdrop-blur">
@@ -486,9 +506,20 @@ export default function Home() {
               twice -- the satellite caption onto the legend, then onto the
               radar caption. Stacked, they cannot. The right inset clears the
               map's zoom controls. */}
-          {!picking && (rainEnabled || floodLayer) && (
+          {!picking && (
             <div className="pointer-events-none absolute left-3 right-14 top-3 z-10 flex flex-col items-start gap-2 sm:right-auto sm:max-w-sm">
               <div className="pointer-events-auto flex flex-wrap gap-2">
+                <button
+                  onClick={() => setRoadsOn((on) => !on)}
+                  aria-pressed={roadsOn}
+                  className={`rounded-xl border px-3 py-2 text-sm backdrop-blur transition-colors ${
+                    roadsOn
+                      ? 'border-rose-500 bg-rose-950/90 text-rose-200'
+                      : 'border-slate-700 bg-slate-950/85 text-slate-300 hover:bg-slate-900'
+                  }`}
+                >
+                  🛣️ {t('layer.roads')}
+                </button>
                 {rainEnabled && (
                   <button
                     onClick={() => setRadarOn((on) => !on)}

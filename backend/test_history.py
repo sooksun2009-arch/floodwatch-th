@@ -14,6 +14,7 @@ os.environ["JWT_SECRET"] = "test-secret"
 os.environ["SEED_DEMO_DATA"] = "false"
 os.environ["GEOCODE_ENABLED"] = "false"
 os.environ["SYNC_STATIONS_ON_START"] = "false"
+os.environ["FLOODROADS_ENABLED"] = "false"  # no network in tests
 
 import asyncio
 from datetime import datetime, timedelta, timezone

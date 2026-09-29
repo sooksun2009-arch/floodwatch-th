@@ -5,12 +5,12 @@ import os
 import uuid
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import area_overview, storage
+from .. import area_overview, floodroads, storage
 from ..config import settings
 from ..database import get_db
 from ..deps import client_ip, enforce_limit, get_current_user_optional
@@ -108,6 +108,40 @@ async def provinces_overview(db: Session = Depends(get_db)):
     """Every province's status in one go, centroids included, so the browser
     can pick its own province without sending its position here."""
     return await area_overview.overview(db)
+
+
+_roads_gz: dict = {"key": None, "body": None}
+
+
+@router.get("/flood-roads")
+async def flood_roads(request: Request):
+    """Flooded road segments for the map layer (Floodboard, CC BY 4.0).
+
+    Served from our shared cache rather than letting every browser call
+    Floodboard directly: one fetch every few minutes, whatever the traffic.
+    About 1.5 MB as JSON, so it is gzipped here -- once per fetch, not per
+    request -- rather than turning on compression for the whole server,
+    which would spend a small instance's CPU recompressing map tiles.
+    """
+    import gzip
+    import json
+
+    from fastapi.responses import JSONResponse
+
+    segs = await floodroads.segments()
+    if segs is None:
+        return JSONResponse({"type": "FeatureCollection", "features": [],
+                             "attribution": floodroads.ATTRIBUTION, "unavailable": True})
+    key = (floodroads.status()["fetched_at"], len(segs))
+    if _roads_gz["key"] != key:
+        raw = json.dumps(floodroads.as_geojson(segs), ensure_ascii=False,
+                         separators=(",", ":")).encode("utf-8")
+        _roads_gz.update(key=key, raw=raw, body=gzip.compress(raw, 6))
+    headers = {"Cache-Control": "public, max-age=120", "Vary": "Accept-Encoding"}
+    if "gzip" in (request.headers.get("accept-encoding") or ""):
+        return Response(_roads_gz["body"], media_type="application/json",
+                        headers={**headers, "Content-Encoding": "gzip"})
+    return Response(_roads_gz["raw"], media_type="application/json", headers=headers)
 
 
 @router.get("/stats/timeline", response_model=list[TimelinePoint])

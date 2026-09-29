@@ -29,6 +29,7 @@ os.environ["SEED_DEMO_DATA"] = "false"
 os.environ["GEOCODE_ENABLED"] = "false"
 
 os.environ["SYNC_STATIONS_ON_START"] = "false"
+os.environ["FLOODROADS_ENABLED"] = "false"  # no network in tests
 
 
 

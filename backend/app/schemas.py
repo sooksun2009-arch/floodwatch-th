@@ -297,6 +297,24 @@ class RouteStationOut(BaseModel):
     station: WaterStationOut
 
 
+class RouteRoadOut(BaseModel):
+    """A flooded stretch of road along the route, from Floodboard."""
+    along_km: float
+    name: str
+    name_en: str = ""
+    depth_cm: int | None = None
+    closed: bool = False
+    sedan: str
+    motorbike: str
+    conf: float
+    confident: bool
+    estimated: bool = False
+    sources: list[str] = []
+    updated: int | None = None
+    level: str
+    length_m: int = 0
+
+
 class RouteLegOut(BaseModel):
     label: str
     distance_km: float
@@ -310,6 +328,7 @@ class RouteLegOut(BaseModel):
     obstacles: list[ObstacleOut]
     cameras: list[RouteCameraOut]
     stations: list[RouteStationOut] = []
+    roads: list[RouteRoadOut] = []
 
 
 class RouteCheckOut(BaseModel):
@@ -325,6 +344,8 @@ class RouteCheckOut(BaseModel):
     degraded: str | None
     corridor_m: int
     routes: list[RouteLegOut]
+    # Set whenever Floodboard road data is part of this answer (CC BY 4.0).
+    roads_attribution: str | None = None
     # Weather heading for the route. Deliberately beside the verdict rather
     # than folded into it: rain is a reason to expect trouble, not evidence
     # that any particular road is under water, and roads drain at wildly

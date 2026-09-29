@@ -17,6 +17,7 @@ os.environ["GEOCODE_ENABLED"] = "false"
 # gate is down. The gate itself is covered in test_photo.py.
 os.environ["REQUIRE_PHOTO"] = "false"
 os.environ["SYNC_STATIONS_ON_START"] = "false"
+os.environ["FLOODROADS_ENABLED"] = "false"  # no network in tests
 os.environ["REQUIRE_MODERATION"] = "true"
 # Reports per IP per hour — raised so the rate limiter does not mask a result.
 os.environ["ANON_REPORT_LIMIT"] = "200"

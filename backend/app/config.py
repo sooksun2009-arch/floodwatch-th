@@ -313,6 +313,18 @@ class Settings(BaseSettings):
     # the other.
     backup_token: str = ""
 
+    # Flooded road segments from Floodboard's open data (CC BY 4.0). Fetched
+    # at most once per cache period for everyone, never per visitor.
+    floodroads_enabled: bool = True
+    floodroads_url: str = "https://floodboard.org/api/export/roads.geojson"
+    floodroads_cache_sec: int = 300
+    # Shown on the map from this confidence up; below it is mostly guesswork.
+    floodroads_min_conf_show: float = 0.3
+    # Only from this confidence up may a segment call a route risky/blocked.
+    floodroads_min_conf_block: float = 0.5
+    # How close a segment's points must be to the route to run "along" it.
+    floodroads_near_m: int = 30
+
 
 def _safe_header(value: str, fallback: str) -> str:
     """Make a config string safe to send as an HTTP header value.

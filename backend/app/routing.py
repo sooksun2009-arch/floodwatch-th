@@ -258,6 +258,10 @@ def _merge_polygons(*sources: dict | None) -> dict | None:
     return {"type": "MultiPolygon", "coordinates": rings} if rings else None
 
 
+# Why the last detour attempt produced nothing. None once one succeeds.
+LAST_ORS_FAILURE: str | None = None
+
+
 async def _ors_route(origin: tuple[float, float], dest: tuple[float, float],
                      avoid: dict | None) -> RouteGeometry | None:
     """One route from OpenRouteService, optionally avoiding flooded areas.
@@ -265,8 +269,14 @@ async def _ors_route(origin: tuple[float, float], dest: tuple[float, float],
     Returns None (rather than raising) on any failure, because this is always
     an *extra* option layered on top of the OSRM result — a missing key, an
     exhausted quota or an unroutable request must not break the main answer.
+
+    Why it failed is recorded in LAST_ORS_FAILURE. Swallowing the reason
+    entirely meant a key could be set, the warning about it gone, and still no
+    detour appear, with nothing to look at from outside the container.
     """
+    global LAST_ORS_FAILURE
     if not settings.ors_api_key:
+        LAST_ORS_FAILURE = "ยังไม่ได้ตั้งค่าคีย์"
         return None
 
     body: dict = {
@@ -288,6 +298,14 @@ async def _ors_route(origin: tuple[float, float], dest: tuple[float, float],
                 },
             )
         if resp.status_code != 200:
+            # The status and the upstream's own error code, never its body:
+            # ORS echoes the request, which would put the route into the log.
+            code = ""
+            try:
+                code = str(((resp.json() or {}).get("error") or {}).get("code") or "")
+            except ValueError:
+                pass
+            LAST_ORS_FAILURE = f"HTTP {resp.status_code}{f' code {code}' if code else ''}"
             return None
         data = resp.json()
         feature = (data.get("features") or [None])[0]
@@ -296,15 +314,18 @@ async def _ors_route(origin: tuple[float, float], dest: tuple[float, float],
         coordinates = feature.get("geometry", {}).get("coordinates") or []
         path = [(c[1], c[0]) for c in coordinates]
         if len(path) < 2:
+            LAST_ORS_FAILURE = "ตอบกลับมาไม่มีเส้นทาง"
             return None
         summary = feature.get("properties", {}).get("summary", {})
+        LAST_ORS_FAILURE = None
         return RouteGeometry(
             path=simplify(path),
             distance_km=round(summary.get("distance", 0) / 1000, 2),
             duration_min=round(summary.get("duration", 0) / 60, 1),
             label="เส้นทางเลี่ยงน้ำท่วม" if avoid else "เส้นทางจาก ORS",
         )
-    except (httpx.HTTPError, ValueError, KeyError, IndexError):
+    except (httpx.HTTPError, ValueError, KeyError, IndexError) as exc:
+        LAST_ORS_FAILURE = type(exc).__name__
         return None
 
 
@@ -579,6 +600,18 @@ async def check_route(db: Session, origin: tuple[float, float], dest: tuple[floa
                 # waiting the water out beats driving an extra hour.
                 if detour_analysis.geometry.distance_km <= analyses[0].geometry.distance_km * 2.5:
                     analyses.append(detour_analysis)
+                else:
+                    detour_note = (f"มีเส้นทางเลี่ยงแต่ไกลเกินไป ({detour.distance_km} กม. "
+                                   f"เทียบกับ {analyses[0].geometry.distance_km} กม.) จึงไม่เสนอ")
+                    degraded = f"{degraded} {detour_note}" if degraded else detour_note
+            elif LAST_ORS_FAILURE:
+                note = f"คำนวณเส้นทางเลี่ยงไม่สำเร็จ ({LAST_ORS_FAILURE})"
+                degraded = f"{degraded} {note}" if degraded else note
+        elif settings.ors_api_key and not polygons:
+            # Nothing to steer around: the blocking evidence is a road segment
+            # too unsure to box, or an area the satellite feed did not cover.
+            note = "ยังไม่มีพื้นที่ที่ชัดพอจะใช้คำนวณทางเลี่ยง"
+            degraded = f"{degraded} {note}" if degraded else note
         elif polygons:
             note = ("ยังไม่ได้ตั้งค่า OpenRouteService จึงเปรียบเทียบได้เฉพาะเส้นทางสำรองที่มีอยู่ "
                     "ไม่สามารถคำนวณเส้นทางเลี่ยงจุดน้ำท่วมโดยตรง")

@@ -87,6 +87,26 @@ with TestClient(app) as c:
     check("ล้างหน่วยความจำ -> ไม่เหลือใครอยู่ (ไม่ได้เขียนลงดิสก์)",
           c.get("/api/visits/summary", headers=auth).json()["online_now"] == 0)
 
+    # ------------------------------------------------- whose clock
+    # Render runs in UTC. Counting by its date filed every visit between
+    # midnight and 7am under the day before, and pushed the hourly chart seven
+    # hours away from the clock the reader is holding.
+    from datetime import datetime, timezone as _tz
+
+    from app.visits import BANGKOK, _now
+
+    thai = _now()
+    utc = datetime.now(_tz.utc)
+    check("นับวันตามเวลาไทย ไม่ใช่เวลาเครื่อง",
+          thai.utcoffset().total_seconds() == 7 * 3600, thai.utcoffset())
+    check("ชั่วโมงที่บันทึกตรงกับนาฬิกาบ้านเรา",
+          thai.hour == (utc.hour + 7) % 24, (thai.hour, utc.hour))
+    # The stored day and the day the summary asks for must be the same clock,
+    # or "today" quietly reads a row nothing is written to.
+    row_day = data["days"][-1]["day"]
+    check("วันที่ในแถวข้อมูล = วันที่ที่หน้าสรุปถาม", row_day == thai.strftime("%Y-%m-%d"),
+          (row_day, thai.strftime("%Y-%m-%d")))
+
     # ------------------------------------------------- who may read it
     check("ไม่ล็อกอิน -> อ่านสรุปไม่ได้",
           c.get("/api/visits/summary").status_code in (401, 403),

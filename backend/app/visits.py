@@ -17,7 +17,7 @@ made up for this tab, dropped as soon as it stops checking in. A restart of the
 instance forgets it, and that is fine, because it is a number about right now.
 """
 import time
-from datetime import date, datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import Integer, String, UniqueConstraint, func, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
@@ -27,6 +27,23 @@ from .models import Base
 # How long a tab counts as "here" after its last check-in. Long enough to
 # survive a slow connection, short enough that the number means now.
 ONLINE_TTL_SEC = 90
+
+# Days and hours are Thailand's, not the server's.
+#
+# Render runs in UTC, so counting by UTC date put every visit between midnight
+# and 7am under the previous day, and bucketed the hourly chart seven hours
+# away from the clock the reader is looking at -- a whole day's traffic piled
+# up at "00:00" because that is 7am in Bangkok.
+#
+# A fixed offset rather than a named zone: Thailand has been UTC+7 without
+# daylight saving since 1940, and this way the server needs no timezone
+# database installed to get a Thai date right.
+BANGKOK = timezone(timedelta(hours=7))
+
+
+def _now():
+    return datetime.now(BANGKOK)
+
 
 # A page name is a short label chosen from this list, never a path or a query
 # string: a URL can carry what someone searched for, and this file exists on
@@ -68,7 +85,7 @@ def online_now() -> int:
 
 def record(db: Session, page: str, first_today: bool) -> None:
     """Add one view, and one visitor if the browser says it is new today."""
-    now = datetime.now(timezone.utc)
+    now = _now()
     day = now.strftime("%Y-%m-%d")
     page = page if page in PAGES else "other"
 
@@ -89,7 +106,7 @@ def record(db: Session, page: str, first_today: bool) -> None:
 
 def summary(db: Session, days: int = 14) -> dict:
     """Totals by day and by hour for today, plus who is here now."""
-    today = date.today().strftime("%Y-%m-%d")
+    today = _now().strftime("%Y-%m-%d")
 
     by_day = db.execute(
         select(VisitStat.day,

@@ -62,9 +62,14 @@ check("ไม่มีคีย์ -> บอกว่ายังไม่ได
 
 settings.ors_api_key = "test-key"
 for status, payload, want in [
-    (403, {"error": {"code": 2099}}, "HTTP 403 code 2099"),
-    (429, {"error": {"code": 2004}}, "HTTP 429 code 2004"),
+    # Codes a reader can act on are said in plain words; the rest keep the
+    # status, which is all there is to go on.
+    (403, {"error": {"code": 2099}}, "คีย์ไม่ถูกต้องหรือถูกปฏิเสธ"),
+    (429, {"error": {"code": 2004}}, "เกินโควตาการใช้งานของวันนี้"),
+    (404, {"error": {"code": 2009}}, "ไม่พบเส้นทางที่เลี่ยงจุดน้ำท่วมได้ — น้ำกระจายจนไม่เหลือทางอ้อม"),
+    (404, {"error": {"code": 2010}}, "จุดต้นทางหรือปลายทางอยู่ในพื้นที่น้ำท่วมเอง"),
     (400, {}, "HTTP 400"),
+    (500, {"error": {"code": 9999}}, "HTTP 500 code 9999"),
 ]:
     real, Fake = with_response(status, payload)
     httpx.AsyncClient = Fake
@@ -73,7 +78,7 @@ for status, payload, want in [
         out = asyncio.run(routing._ors_route(A, B, BOX))
     finally:
         httpx.AsyncClient = real
-    check(f"ORS ตอบ {status} -> จำสาเหตุไว้ ({want})",
+    check(f"ORS ตอบ {status} -> บอกสาเหตุ ({want[:40]})",
           out is None and routing.LAST_ORS_FAILURE == want, routing.LAST_ORS_FAILURE)
 
 ok_payload = {"features": [{"geometry": {"coordinates": [[100.75, 13.72], [100.70, 13.69],

@@ -213,7 +213,7 @@ def road_avoid_polygons(analyses: list) -> dict | None:
     """
     polygons = []
     seen = set()
-    pad = 0.0004  # about 40 m
+    pad = 0.00045  # about 50 m either side of the road
     for analysis in analyses:
         for road in analysis.roads:
             if not road["confident"] or road["sedan"] not in ("blocked", "risky"):
@@ -222,11 +222,19 @@ def road_avoid_polygons(analyses: list) -> dict | None:
             if key in seen:
                 continue
             seen.add(key)
-            # Where on the path it is: good enough to box the stretch.
-            lat, lng = _point_at_km(analysis.geometry.path, road["along_km"])
-            half = max(road.get("length_m", 0) / 2000, 0.05) / EARTH_KM_PER_DEG
-            ring = [[lng - half - pad, lat - half - pad], [lng + half + pad, lat - half - pad],
-                    [lng + half + pad, lat + half + pad], [lng - half - pad, lat + half + pad]]
+            # The road's own extent, padded. It used to be a square as wide as
+            # the road was long -- 1.3 km across for a 1.3 km road -- which
+            # walled off every side street beside it, and ORS then reported no
+            # route at all rather than a detour.
+            box = road.get("bbox")
+            if box:
+                west, south, east, north = box
+            else:  # a report pin rather than a stretch
+                lat, lng = _point_at_km(analysis.geometry.path, road["along_km"])
+                west = east = lng
+                south = north = lat
+            ring = [[west - pad, south - pad], [east + pad, south - pad],
+                    [east + pad, north + pad], [west - pad, north + pad]]
             ring.append(ring[0])
             polygons.append([ring])
             if len(polygons) >= 40:
@@ -294,6 +302,16 @@ def _merge_polygons(*sources: dict | None) -> dict | None:
 # Why the last detour attempt produced nothing. None once one succeeds.
 LAST_ORS_FAILURE: str | None = None
 
+# OpenRouteService error codes worth saying in plain words. A reader looking at
+# a flooded route is owed "no way round the water" rather than "code 2009".
+ORS_CODE_TH = {
+    2009: "ไม่พบเส้นทางที่เลี่ยงจุดน้ำท่วมได้ — น้ำกระจายจนไม่เหลือทางอ้อม",
+    2010: "จุดต้นทางหรือปลายทางอยู่ในพื้นที่น้ำท่วมเอง",
+    2004: "เกินโควตาการใช้งานของวันนี้",
+    2003: "คีย์ไม่มีสิทธิ์ใช้บริการนี้",
+    2099: "คีย์ไม่ถูกต้องหรือถูกปฏิเสธ",
+}
+
 
 async def _ors_route(origin: tuple[float, float], dest: tuple[float, float],
                      avoid: dict | None) -> RouteGeometry | None:
@@ -338,7 +356,8 @@ async def _ors_route(origin: tuple[float, float], dest: tuple[float, float],
                 code = str(((resp.json() or {}).get("error") or {}).get("code") or "")
             except ValueError:
                 pass
-            LAST_ORS_FAILURE = f"HTTP {resp.status_code}{f' code {code}' if code else ''}"
+            plain = ORS_CODE_TH.get(int(code)) if code.isdigit() else None
+            LAST_ORS_FAILURE = plain or f"HTTP {resp.status_code}{f' code {code}' if code else ''}"
             return None
         data = resp.json()
         feature = (data.get("features") or [None])[0]
@@ -641,7 +660,7 @@ async def check_route(db: Session, origin: tuple[float, float], dest: tuple[floa
                                    f"เทียบกับ {analyses[0].geometry.distance_km} กม.) จึงไม่เสนอ")
                     degraded = f"{degraded} {detour_note}" if degraded else detour_note
             elif LAST_ORS_FAILURE:
-                note = f"คำนวณเส้นทางเลี่ยงไม่สำเร็จ ({LAST_ORS_FAILURE})"
+                note = f"เรื่องทางเลี่ยง: {LAST_ORS_FAILURE}"
                 degraded = f"{degraded} {note}" if degraded else note
         elif settings.ors_api_key and not polygons:
             # Nothing to steer around: the blocking evidence is a road segment

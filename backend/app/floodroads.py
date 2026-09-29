@@ -262,6 +262,10 @@ def along_route(segs: list[dict], path: list[tuple[float, float]]) -> list[dict]
             "conf": seg["conf"], "confident": confident, "estimated": seg["estimated"],
             "sources": seg["sources"], "updated": seg["updated"],
             "level": counted,
+            # The stretch's own extent, so a detour can be steered around the
+            # road itself rather than a square the size of its length.
+            "bbox": [min(x for x, _ in points), min(y for _, y in points),
+                     max(x for x, _ in points), max(y for _, y in points)],
             "along_km": round(min(h[1] for h in close), 2),
             "length_m": int(round(sum(
                 math.dist(index.xy(a[1], a[0]), index.xy(b[1], b[0]))

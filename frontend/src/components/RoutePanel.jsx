@@ -768,9 +768,17 @@ export default function RoutePanel({
             <button
               className="btn-ghost text-sm"
               onClick={() =>
-                onAskChat(
-                  `มีทางเลี่ยงจาก${originText || 'ต้นทาง'}ไป${destinationText || 'ปลายทาง'}ไหม`,
-                )
+                onAskChat({
+                  message: `มีทางเลี่ยงจาก${result.origin_label || originText || 'ต้นทาง'}ไป${result.destination_label || destinationText || 'ปลายทาง'}ไหม`,
+                  // Coordinates, not the labels: "ตำแหน่งของฉัน" and "หมุด 13.69,
+                  // 100.71" are not places the assistant can look up.
+                  route: {
+                    origin: result.origin,
+                    destination: result.destination,
+                    origin_label: result.origin_label || originText || null,
+                    destination_label: result.destination_label || destinationText || null,
+                  },
+                })
               }
             >
               ถามแชทบอทเรื่องทางเลี่ยง

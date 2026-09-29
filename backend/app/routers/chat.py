@@ -43,7 +43,11 @@ async def _try_route_answer(db: Session, message: str, lat: float | None,
         return ChatOut(answer=result.answer, intent=result.intent, engine="rules",
                        suggestions=result.suggestions)
     dest, dest_label = (dest_found[0], dest_found[1]), dest_found[2]
+    return await _route_answer(db, origin, origin_label, dest, dest_label)
 
+
+async def _route_answer(db: Session, origin: tuple[float, float], origin_label: str,
+                        dest: tuple[float, float], dest_label: str) -> ChatOut:
     try:
         raw = await check_route(db, origin, dest)
     except ValueError as exc:
@@ -90,7 +94,15 @@ async def ask(payload: ChatIn, request: Request, db: Session = Depends(get_db),
     expire_stale_reports(db)
     message = payload.message.strip()
 
-    response = await _try_route_answer(db, message, payload.lat, payload.lng)
+    if payload.route is not None:
+        # The reader is already looking at this route; use its coordinates as
+        # given rather than guessing at them from the sentence.
+        ctx = payload.route
+        response = await _route_answer(
+            db, (ctx.origin.lat, ctx.origin.lng), ctx.origin_label or "ต้นทาง",
+            (ctx.destination.lat, ctx.destination.lng), ctx.destination_label or "ปลายทาง")
+    else:
+        response = await _try_route_answer(db, message, payload.lat, payload.lng)
     if response is None:
         result = chatbot.route(db, message, payload.lat, payload.lng, payload.lang)
         answer = result.answer

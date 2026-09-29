@@ -77,7 +77,7 @@ export default function ChatWidget({ open, setOpen, pendingMessage, onConsumed, 
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, busy])
 
-  const send = async (text) => {
+  const send = async (text, routeContext = null) => {
     const message = (text ?? input).trim()
     if (!message || busy) return
 
@@ -93,6 +93,8 @@ export default function ChatWidget({ open, setOpen, pendingMessage, onConsumed, 
         session_id: sessionId,
         lat: coords?.lat,
         lng: coords?.lng,
+        // Present when the question is about the route on screen.
+        route: routeContext || undefined,
       })
       setMessages((previous) => [
         ...previous,
@@ -125,7 +127,9 @@ export default function ChatWidget({ open, setOpen, pendingMessage, onConsumed, 
   useEffect(() => {
     if (!pendingMessage) return
     setOpen(true)
-    send(pendingMessage)
+    // A plain string, or { message, route } from the route panel.
+    if (typeof pendingMessage === 'string') send(pendingMessage)
+    else send(pendingMessage.message, pendingMessage.route)
     onConsumed?.()
   }, [pendingMessage])
 

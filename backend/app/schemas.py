@@ -362,8 +362,24 @@ class GeocodeOut(BaseModel):
 
 # ---------------------------------------------------------------- chat
 
+class ChatRouteContext(BaseModel):
+    """The route the reader is already looking at, as coordinates.
+
+    Sent by the route panel's "ask about a detour" button. Labels such as
+    "ตำแหน่งของฉัน" or "หมุด 13.69, 100.71" are what the reader sees for a GPS
+    fix or a dropped pin; they are not place names, and putting them into a
+    sentence for the assistant to re-parse is what made it answer "I am not
+    sure where you mean". The coordinates are already known, so they are sent.
+    """
+    origin: LatLng
+    destination: LatLng
+    origin_label: str | None = Field(default=None, max_length=120)
+    destination_label: str | None = Field(default=None, max_length=120)
+
+
 class ChatIn(BaseModel):
     message: str = Field(min_length=1, max_length=500)
+    route: ChatRouteContext | None = None
     # Which language to answer in. Only the common questions have English
     # wording; the rest reply in Thai and say so.
     lang: str = Field(default="th", pattern="^(th|en)$")

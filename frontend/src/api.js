@@ -117,6 +117,7 @@ export const api = {
   provinces: () => request('/api/areas/provinces'),
   summary: () => request('/api/stats/summary'),
   byProvince: () => request('/api/stats/by-province'),
+  provincesOverview: () => request('/api/stats/provinces-overview'),
   timeline: (hours) => request(`/api/stats/timeline${qs({ hours })}`),
 
   upload: (file) => {

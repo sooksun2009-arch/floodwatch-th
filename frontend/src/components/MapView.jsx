@@ -242,6 +242,8 @@ export default function MapView({
   showFloodExtent = false,
   selected = EMPTY_SET,
   fitKey = null,
+  // { lat, lng, zoom, key }: fly there. `key` changes to repeat the same spot.
+  focus = null,
   className = '',
 }) {
   const { t, lang } = useT()
@@ -954,6 +956,18 @@ export default function MapView({
     map.once('load', run)
     return () => map.off('load', run)
   }, [fitKey])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !focus) return undefined
+    const run = () => map.flyTo({ center: [focus.lng, focus.lat], zoom: focus.zoom ?? 10 })
+    if (readyRef.current) {
+      run()
+      return undefined
+    }
+    map.once('load', run)
+    return () => map.off('load', run)
+  }, [focus?.key])
 
   return <div ref={containerRef} className={className} />
 }

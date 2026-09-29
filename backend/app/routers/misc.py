@@ -10,7 +10,7 @@ from PIL import Image, UnidentifiedImageError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import storage
+from .. import area_overview, storage
 from ..config import settings
 from ..database import get_db
 from ..deps import client_ip, enforce_limit, get_current_user_optional
@@ -101,6 +101,13 @@ def by_province(db: Session = Depends(get_db), limit: int = Query(default=20, ge
     ]
     stats.sort(key=lambda s: (-LEVEL_RANK.get(s.worst_level or "normal", 0), -s.total))
     return stats[:limit]
+
+
+@router.get("/stats/provinces-overview", response_model=dict)
+async def provinces_overview(db: Session = Depends(get_db)):
+    """Every province's status in one go, centroids included, so the browser
+    can pick its own province without sending its position here."""
+    return await area_overview.overview(db)
 
 
 @router.get("/stats/timeline", response_model=list[TimelinePoint])

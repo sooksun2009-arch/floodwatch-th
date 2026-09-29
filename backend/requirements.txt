@@ -12,3 +12,6 @@ httpx==0.28.1
 openpyxl==3.1.5
 # Only imported when the R2_* settings are filled in.
 boto3==1.35.81
+# Face blurring on uploads (YuNet model in app/data). Headless: no GUI libs.
+opencv-python-headless==4.10.0.84
+numpy>=1.26,<3

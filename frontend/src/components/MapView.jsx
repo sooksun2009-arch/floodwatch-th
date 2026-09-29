@@ -809,6 +809,15 @@ export default function MapView({
       }
       if (props.sources) line(tr('roads.sources', { s: props.sources }), 'color:#64748b')
       line(tr('roads.credit'), 'color:#64748b;margin-top:.25rem')
+      // These lines are Floodboard's, not ours: the "water receded" vote in
+      // this app cannot clear them, so point to where it can.
+      const fix = document.createElement('a')
+      fix.href = 'https://floodboard.org'
+      fix.target = '_blank'
+      fix.rel = 'noopener noreferrer'
+      fix.textContent = tr('roads.floodboardLink')
+      fix.style.cssText = 'display:inline-block;margin-top:.3rem;color:#38bdf8;font-weight:600'
+      root.appendChild(fix)
       popup.setLngLat(event.lngLat).setDOMContent(root).addTo(map)
     })
     map.on('mouseenter', 'flood-roads-line', () => {

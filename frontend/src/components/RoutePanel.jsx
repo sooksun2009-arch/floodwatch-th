@@ -124,6 +124,7 @@ function HowTo({ onClose }) {
               <li>{t('how.1gps')}</li>
               <li>{t('how.1pin')}</li>
               <li>{t('how.1swap')}</li>
+              <li>{t('how.1area')}</li>
             </ul>
           </section>
 
@@ -153,6 +154,9 @@ function HowTo({ onClose }) {
                 <span dangerouslySetInnerHTML={{ __html: t('how.3rep') }} />
               </li>
               <li>
+                <span dangerouslySetInnerHTML={{ __html: t('how.3roads') }} />
+              </li>
+              <li>
                 <span dangerouslySetInnerHTML={{ __html: t('how.3gauge') }} />
               </li>
             </ol>
@@ -173,9 +177,22 @@ function HowTo({ onClose }) {
           <section>
             <h4 className="font-semibold text-slate-100">{t('how.layers')}</h4>
             <ul className="mt-1 space-y-1.5 text-slate-400">
+              <li dangerouslySetInnerHTML={{ __html: t('how.layersRoads') }} />
               <li dangerouslySetInnerHTML={{ __html: t('how.layersSat') }} />
               <li dangerouslySetInnerHTML={{ __html: t('how.layersRain') }} />
             </ul>
+          </section>
+
+          <section>
+            <h4 className="font-semibold text-slate-100">{t('how.update')}</h4>
+            <p className="mt-1" dangerouslySetInnerHTML={{ __html: t('how.updateReports') }} />
+            <ul className="mt-1 space-y-1 text-slate-400">
+              <li dangerouslySetInnerHTML={{ __html: t('how.updateSubside') }} />
+              <li>{t('how.updateExpire')}</li>
+              <li>{t('how.updateAdmin')}</li>
+            </ul>
+            <p className="mt-2" dangerouslySetInnerHTML={{ __html: t('how.updateRoads') }} />
+            <p className="mt-2" dangerouslySetInnerHTML={{ __html: t('how.updateReport') }} />
           </section>
 
           <section className="rounded-xl border border-amber-900/60 bg-amber-950/30 p-3">

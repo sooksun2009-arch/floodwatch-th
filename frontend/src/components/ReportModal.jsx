@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import BlurPad, { renderBlurred } from './BlurPad'
 import { api, ApiError, LEVELS, parseCoords } from '../api'
 
 // Ordered worst-last so the picker reads like a rising scale.
@@ -27,6 +28,9 @@ export default function ReportModal({ open, onClose, initialPoint, onPickOnMap, 
   // Age of the chosen picture, so an old one can be questioned before it goes
   // on a map people use to decide whether to drive.
   const [photoAge, setPhotoAge] = useState(null)
+  const [blurSpots, setBlurSpots] = useState([])
+  const [previewImage, setPreviewImage] = useState(null)
+  const [facesBlurred, setFacesBlurred] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [done, setDone] = useState(null)
@@ -104,6 +108,8 @@ export default function ReportModal({ open, onClose, initialPoint, onPickOnMap, 
     if (!file) return
     if (file.size > 8 * 1024 * 1024) return setError('รูปใหญ่เกิน 8 MB')
     setPhoto(file)
+    setBlurSpots([])
+    setPreviewImage(null)
     setPhotoAge(photoAgeMinutes(file))
     if (photoPreview) URL.revokeObjectURL(photoPreview)
     setPhotoPreview(URL.createObjectURL(file))
@@ -124,8 +130,17 @@ export default function ReportModal({ open, onClose, initialPoint, onPickOnMap, 
       if (photo) {
         // Upload first: if this fails the report has not been filed yet, so the
         // user can retry without creating a duplicate.
-        const uploaded = await api.upload(photo)
+        // With spots tapped, send the blurred copy -- the hidden parts never
+        // leave the phone. Without, the original file as before.
+        let toSend = photo
+        if (blurSpots.length && previewImage) {
+          const canvas = renderBlurred(previewImage, blurSpots)
+          toSend = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9))
+          toSend = new File([toSend], 'photo.jpg', { type: 'image/jpeg' })
+        }
+        const uploaded = await api.upload(toSend)
         photoUrl = uploaded.url
+        setFacesBlurred(uploaded.faces_blurred ?? null)
       }
       const created = await api.createReport({
         lat: point.lat,
@@ -171,6 +186,11 @@ export default function ReportModal({ open, onClose, initialPoint, onPickOnMap, 
                 ? 'รายงานขึ้นแผนที่แล้ว คนที่กำลังจะผ่านเส้นทางนี้เห็นได้ทันที'
                 : 'รายงานเข้าคิวตรวจสอบแล้ว — ถ้ามีคนแจ้งจุดเดียวกันอีกราย จะขึ้นแผนที่เองทันที'}
             </p>
+            {facesBlurred > 0 && (
+              <p className="mt-2 text-xs text-slate-500">
+                เบลอใบหน้าในรูปให้อัตโนมัติแล้ว {facesBlurred} คน
+              </p>
+            )}
             <button className="btn-primary mt-5 w-full" onClick={onClose}>
               ปิด
             </button>
@@ -387,10 +407,11 @@ export default function ReportModal({ open, onClose, initialPoint, onPickOnMap, 
                   className="w-full text-sm text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-800 file:px-3 file:py-2 file:text-sm file:text-slate-200"
                 />
                 {photoPreview && (
-                  <img
+                  <BlurPad
                     src={photoPreview}
-                    alt="ตัวอย่างรูปที่เลือก"
-                    className="mt-2 max-h-44 rounded-lg object-cover"
+                    spots={blurSpots}
+                    onSpots={setBlurSpots}
+                    onImage={setPreviewImage}
                   />
                 )}
                 {/* Only when the file is genuinely old. A warning on every
@@ -415,7 +436,7 @@ export default function ReportModal({ open, onClose, initialPoint, onPickOnMap, 
                   </p>
                 )}
                 <p className="mt-1 text-xs text-slate-500">
-                  ระบบจะลบข้อมูล EXIF (รวมพิกัดกล้อง) ออกก่อนบันทึก
+                  ระบบเบลอใบหน้าคนในรูปให้อัตโนมัติ และลบข้อมูล EXIF (รวมพิกัดกล้อง) ออกก่อนบันทึก
                 </p>
               </div>
 

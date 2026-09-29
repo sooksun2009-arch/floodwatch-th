@@ -421,3 +421,5 @@ class UploadOut(BaseModel):
     width: int
     height: int
     bytes: int
+    # Faces blurred automatically; None when the check could not run.
+    faces_blurred: int | None = None

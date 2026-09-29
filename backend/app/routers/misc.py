@@ -10,7 +10,7 @@ from PIL import Image, UnidentifiedImageError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import area_overview, floodroads, storage
+from .. import area_overview, faceblur, floodroads, storage
 from ..config import settings
 from ..database import get_db
 from ..deps import client_ip, enforce_limit, get_current_user_optional
@@ -197,6 +197,15 @@ async def upload_photo(request: Request, file: UploadFile = File(...),
 
     image.thumbnail((settings.max_image_px, settings.max_image_px))
 
+    # Faces of passers-by, blurred before anything is written. About a second
+    # of CPU, so off the event loop. None means the check could not run: the
+    # photo is still accepted -- refusing flood photos during a flood over a
+    # missing library would be the wrong trade -- and a moderator sees every
+    # photo before it counts for much anyway.
+    from starlette.concurrency import run_in_threadpool
+
+    image, faces = await run_in_threadpool(faceblur.blur_faces, image)
+
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG", quality=82, optimize=True)
     payload = buffer.getvalue()
@@ -214,4 +223,4 @@ async def upload_photo(request: Request, file: UploadFile = File(...),
                             "หรือส่งรายงานโดยไม่แนบรูปก็ได้") from exc
 
     return UploadOut(url=url, width=image.width, height=image.height,
-                     bytes=len(payload))
+                     bytes=len(payload), faces_blurred=faces)

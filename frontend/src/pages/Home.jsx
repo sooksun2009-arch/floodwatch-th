@@ -133,10 +133,20 @@ function Legend({ selected, onToggle, onReset, hasCameras, showRoads }) {
     }
   })
 
+  // Let the map re-place its credit around the legend's new size.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => window.dispatchEvent(new Event('fw:layout')))
+    return () => cancelAnimationFrame(id)
+  }, [open])
+
   return (
-    <div className="absolute bottom-3 left-3 z-10 max-w-[60vw]">
+    // Capped at 60% of the map's height and scrolling inside. Once the
+    // flooded-road key was added the open legend grew up under the layer
+    // buttons at the top, which then covered its own "−", and on a phone it
+    // could not be closed at all. It also closes from the bottom now.
+    <div className="absolute bottom-3 left-3 z-10 flex max-h-[60%] max-w-[60vw] flex-col">
       {open ? (
-        <div className="rounded-xl border border-slate-700 bg-slate-950/90 p-2.5 text-xs backdrop-blur">
+        <div className="flex min-h-0 flex-col overflow-y-auto rounded-xl border border-slate-700 bg-slate-950/90 p-2.5 text-xs backdrop-blur">
           <div className="mb-1.5 flex items-center justify-between gap-3">
             <p className="font-semibold text-slate-300">{t('legend.title')}</p>
             <button
@@ -195,7 +205,7 @@ function Legend({ selected, onToggle, onReset, hasCameras, showRoads }) {
                   </li>
                 ))}
               </ul>
-              <p className="mt-1 text-[10px] leading-snug text-slate-500">{t('legend.roadsNote')}</p>
+              <p className="mt-1 hidden text-[10px] leading-snug text-slate-500 sm:block">{t('legend.roadsNote')}</p>
             </div>
           )}
           {selected.size > 0 && (
@@ -206,6 +216,12 @@ function Legend({ selected, onToggle, onReset, hasCameras, showRoads }) {
               {t('legend.filtering')} {selected.size} · {t('legend.showAll')}
             </button>
           )}
+          <button
+            onClick={() => setOpen(false)}
+            className="mt-1.5 w-full rounded border border-slate-700 px-1 py-1 text-center text-[11px] text-slate-300 hover:bg-slate-800"
+          >
+            {t('legend.collapse')} ▾
+          </button>
         </div>
       ) : (
         <button

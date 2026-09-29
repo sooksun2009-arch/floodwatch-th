@@ -977,9 +977,17 @@ export default function MapView({
     const container = containerRef.current
     if (!container) return undefined
 
+    let watched = null
     const measure = () => {
       const box = container.getBoundingClientRect()
       const credit = container.querySelector('.maplibregl-ctrl-attrib')
+      // The credit's own width changes after the map settles -- Floodboard's
+      // line joins it once that layer has data -- and a wider credit reaches
+      // things a narrower one cleared. Watch it, not just the container.
+      if (credit && credit !== watched) {
+        observer.observe(credit)
+        watched = credit
+      }
       const width = credit ? credit.getBoundingClientRect().width : 170
       const height = credit ? credit.getBoundingClientRect().height : 24
       const blockers = [...document.querySelectorAll('button, a')]
@@ -993,26 +1001,38 @@ export default function MapView({
       // stacked above the first, the credit was lifted clear of the lower
       // one and straight into the upper one. Keep raising it until the spot
       // it would occupy is empty, however tall the stack in that corner gets.
+      // MapLibre gives the credit its own bottom margin (10px), so it sits
+      // that far above the corner we move. Leaving it out put the credit 10px
+      // higher than this loop believed -- straight into a legend row it had
+      // "cleared".
+      const margin = credit ? parseFloat(getComputedStyle(credit).marginBottom) || 0 : 0
       let lift = 12
-      for (let pass = 0; pass < 10; pass++) {
-        const bottom = box.bottom - lift
+      // One pass per blocker climbed. An open legend is a stack of a dozen
+      // or more rows, each its own button; ten passes ran out halfway up it.
+      for (let pass = 0; pass < blockers.length + 1; pass++) {
+        const bottom = box.bottom - lift - margin
         const top = bottom - height
         const hit = blockers.find((r) => r.bottom > top && r.top < bottom)
         if (!hit) break
-        lift = box.bottom - hit.top + 8
+        lift = box.bottom - hit.top + 8 - margin
       }
       container.style.setProperty('--fw-credit-lift', `${Math.round(lift)}px`)
     }
 
+    const observer = new ResizeObserver(() => measure())
     measure()
-    const observer = new ResizeObserver(measure)
     observer.observe(container)
     window.addEventListener('resize', measure)
+    // Panels over the map (the legend) announce when they open or close:
+    // neither resizes anything, so nothing else would tell us to look again,
+    // and the wider credit (OSM + Floodboard) reaches into the open legend.
+    window.addEventListener('fw:layout', measure)
     // Layout settles after fonts and the map chrome land.
     const later = setTimeout(measure, 1200)
     return () => {
       observer.disconnect()
       window.removeEventListener('resize', measure)
+      window.removeEventListener('fw:layout', measure)
       clearTimeout(later)
     }
   })

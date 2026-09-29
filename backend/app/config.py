@@ -327,6 +327,8 @@ class Settings(BaseSettings):
 
     # Rain at one camera: Open-Meteo hourly forecast (free, no key, CC BY 4.0).
     open_meteo_url: str = "https://api.open-meteo.com/v1/forecast"
+    # Fallback when Open-Meteo rate-limits the shared outgoing IP.
+    met_no_url: str = "https://api.met.no/weatherapi/locationforecast/2.0/compact"
     weather_at_cache_sec: int = 900
 
 

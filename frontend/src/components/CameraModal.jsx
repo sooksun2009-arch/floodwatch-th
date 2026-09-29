@@ -145,13 +145,20 @@ function RainStrip({ camera }) {
       {data.hours?.length > 0 && (
         <div className="flex items-center gap-1.5">
           <span className="text-slate-500">3 ชม.ข้างหน้า</span>
-          {data.hours.map((h, i) => (
-            <span key={h.time} className={`rounded-lg border px-1.5 py-0.5 text-center ${tone(h.probability ?? 0)}`}>
-              {/* The first slot is the hour already under way. */}
-              {i === 0 ? 'ชม.นี้' : h.time} · {h.probability ?? '–'}%
-              {h.mm > 0 && <span className="opacity-80"> · {h.mm} มม.</span>}
-            </span>
-          ))}
+          {data.hours.map((h, i) => {
+            // MET Norway (the fallback) gives an amount but no chance of rain;
+            // show the amount then, rather than a blank percentage.
+            const hasChance = h.probability !== null && h.probability !== undefined
+            const level = hasChance ? h.probability : (h.mm ?? 0) >= 2 ? 80 : (h.mm ?? 0) > 0 ? 50 : 0
+            return (
+              <span key={h.time} className={`rounded-lg border px-1.5 py-0.5 text-center ${tone(level)}`}>
+                {/* The first slot is the hour already under way. */}
+                {i === 0 ? 'ชม.นี้' : h.time} ·{' '}
+                {hasChance ? `${h.probability}%` : `${h.mm ?? 0} มม.`}
+                {hasChance && h.mm > 0 && <span className="opacity-80"> · {h.mm} มม.</span>}
+              </span>
+            )
+          })}
         </div>
       )}
       <span className="w-full text-[10px] text-slate-600">

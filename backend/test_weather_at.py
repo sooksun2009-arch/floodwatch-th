@@ -85,10 +85,28 @@ with TestClient(app) as c:
 
     async def boom(lat, lng):
         raise RuntimeError("down")
+
+    utc_now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+
+    async def fake_met(lat, lng):
+        return {"properties": {"timeseries": [
+            {"time": (utc_now + timedelta(hours=h - 1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+             "data": {"next_1_hours": {"details": {"precipitation_amount": float(h)}}}}
+            for h in range(6)]}}
+
     weather_at._open_meteo = boom
+    weather_at._met_no = fake_met
+    weather_at._cache.clear()
+    d = c.get("/api/rain/at", params={"lat": 13.72, "lng": 100.75}).json()
+    check("Open-Meteo ล่ม -> ใช้ MET Norway แทน", [h["mm"] for h in d["hours"]] == [1.0, 2.0, 3.0], d)
+    check("MET Norway ไม่มีโอกาสฝน -> ส่ง null ไม่เดา", all(h["probability"] is None for h in d["hours"]), d)
+    check("เครดิตเปลี่ยนเป็น MET Norway", "MET Norway" in (d["attribution"] or ""), d["attribution"])
+
+    weather_at._met_no = boom
     weather_at._cache.clear()
     r = c.get("/api/rain/at", params={"lat": 13.72, "lng": 100.75})
-    check("Open-Meteo ล่ม -> ยังตอบได้ ไม่มีพยากรณ์", r.status_code == 200 and r.json()["hours"] == [],
+    check("ล่มทั้งสองแหล่ง -> ยังตอบได้ ไม่มีพยากรณ์ และบอกเหตุผล",
+          r.status_code == 200 and r.json()["hours"] == [] and "met.no" in (r.json()["forecast_error"] or ""),
           r.text[:200])
 
     r = c.get("/api/rain/at", params={"lat": 35.0, "lng": 139.0})

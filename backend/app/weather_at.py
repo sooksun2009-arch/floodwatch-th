@@ -29,6 +29,7 @@ logger = logging.getLogger("floodwatch.weather_at")
 
 BANGKOK = timezone(timedelta(hours=7))
 ATTRIBUTION = "พยากรณ์: Open-Meteo.com (CC BY 4.0)"
+ATTRIBUTION_MET = "พยากรณ์: MET Norway (CC BY 4.0)"
 # A wet Longdo camera this close counts as rain "at" this one.
 NEAR_KM = 1.5
 HOURS = 3
@@ -46,6 +47,40 @@ async def _open_meteo(lat: float, lng: float) -> dict:
         }, headers={"User-Agent": settings.http_user_agent})
         resp.raise_for_status()
         return resp.json()
+
+
+async def _met_no(lat: float, lng: float) -> dict:
+    """MET Norway's forecast (CC BY 4.0). The fallback: Open-Meteo counts its
+    free limit per IP, and Render's free tier shares outgoing addresses with
+    everyone else on it -- it answered 429 on the first day in production.
+    MET Norway asks only that a server identify itself, which ours does."""
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(settings.met_no_url, params={
+            "lat": round(lat, 4), "lon": round(lng, 4),
+        }, headers={"User-Agent": settings.http_user_agent})
+        resp.raise_for_status()
+        return resp.json()
+
+
+def _met_hours(payload: dict, now: datetime) -> list[dict]:
+    """MET Norway gives an amount per hour but, for Thailand, no chance."""
+    this_hour = now.replace(minute=0, second=0, microsecond=0)
+    out = []
+    for step in ((payload or {}).get("properties") or {}).get("timeseries") or []:
+        try:
+            at = datetime.fromisoformat(step["time"].replace("Z", "+00:00")).astimezone(BANGKOK)
+        except (KeyError, ValueError):
+            continue
+        if at < this_hour:
+            continue
+        nxt = ((step.get("data") or {}).get("next_1_hours") or {}).get("details") or {}
+        if "precipitation_amount" not in nxt:
+            continue
+        out.append({"time": at.strftime("%H:%M"), "probability": None,
+                    "mm": nxt["precipitation_amount"]})
+        if len(out) == HOURS:
+            break
+    return out
 
 
 def _hours(payload: dict, now: datetime) -> list[dict]:
@@ -95,16 +130,27 @@ async def at(lat: float, lng: float) -> dict:
         return hit[1]
 
     now = datetime.now(BANGKOK)
-    hours: list[dict] = []
-    forecast_error = None
-    try:
-        hours = _hours(await _open_meteo(lat, lng), now)
-    except Exception as exc:
+    def why(exc: Exception) -> str:
         # Status or exception type only -- enough to diagnose from outside the
         # container, nothing from the upstream body.
-        forecast_error = (f"HTTP {exc.response.status_code}"
-                          if isinstance(exc, httpx.HTTPStatusError) else type(exc).__name__)
+        return (f"HTTP {exc.response.status_code}"
+                if isinstance(exc, httpx.HTTPStatusError) else type(exc).__name__)
+
+    hours: list[dict] = []
+    forecast_error = None
+    attribution = None
+    try:
+        hours = _hours(await _open_meteo(lat, lng), now)
+        attribution = ATTRIBUTION
+    except Exception as exc:
+        forecast_error = f"open-meteo {why(exc)}"
         logger.warning("ดึงพยากรณ์ฝนจาก Open-Meteo ไม่สำเร็จ: %s", forecast_error)
+        try:
+            hours = _met_hours(await _met_no(lat, lng), now)
+            attribution = ATTRIBUTION_MET
+        except Exception as exc2:
+            forecast_error += f"; met.no {why(exc2)}"
+            logger.warning("ดึงพยากรณ์จาก MET Norway ไม่สำเร็จ: %s", why(exc2))
     observed = None
     try:
         observed = await _observed(lat, lng)
@@ -112,7 +158,7 @@ async def at(lat: float, lng: float) -> dict:
         logger.warning("อ่านฝนจากกล้องไม่สำเร็จ: %s", type(exc).__name__)
 
     value = {"now": observed, "hours": hours,
-             "attribution": ATTRIBUTION if hours else None,
+             "attribution": attribution if hours else None,
              "forecast_error": forecast_error}
     # A failed fetch is not cached for long: the next person should retry.
     if hours:

@@ -452,6 +452,39 @@ const check = (name, ok, extra = '') => {
     }))
     check(`มือถือกว้าง ${width}px: หน้าไม่กว้างเกินจอ (ไม่ถูกย่อทั้งหน้า)`,
           fit.inner === width && fit.scroll <= width, JSON.stringify(fit))
+
+    // A user opened the legend on a phone and could not close it: grown by
+    // the flooded-road key, it reached up under the layer buttons, which
+    // covered its own collapse control. Open it and make sure it can close.
+    await page.evaluate(() => [...document.querySelectorAll('button')]
+      .find((b) => b.textContent.includes('สัญลักษณ์') && !b.textContent.includes('ย่อ'))?.click())
+    await new Promise((r) => setTimeout(r, 300))
+    const legend = await page.evaluate(() => {
+      const closers = [...document.querySelectorAll('button')].filter((b) =>
+        b.getAttribute('aria-label') === 'ย่อคำอธิบายสัญลักษณ์' || b.textContent.includes('ย่อคำอธิบายสัญลักษณ์'))
+      const reachable = closers.filter((b) => {
+        const r = b.getBoundingClientRect()
+        if (!r.width) return false
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+        return hit === b || b.contains(hit)
+      })
+      const panel = closers[0]?.closest('.overflow-y-auto')?.getBoundingClientRect()
+      const layerBtns = [...document.querySelectorAll('button[aria-pressed]')]
+        .filter((b) => /ถนนน้ำท่วม|เรดาร์|ดาวเทียม/.test(b.textContent))
+        .map((b) => b.getBoundingClientRect())
+      const overlap = panel ? layerBtns.some((r) => r.bottom > panel.top && r.top < panel.bottom && r.right > panel.left && r.left < panel.right) : null
+      return { closers: closers.length, reachable: reachable.length, overlap }
+    })
+    check(`มือถือ ${width}px: เปิดคำอธิบายสีแล้วมีปุ่มย่อที่กดถึงได้`,
+          legend.closers > 0 && legend.reachable > 0, JSON.stringify(legend))
+    check(`มือถือ ${width}px: คำอธิบายสีไม่ขึ้นไปทับปุ่มชั้นข้อมูล`, legend.overlap === false, JSON.stringify(legend))
+    await page.evaluate(() => {
+      const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('ย่อคำอธิบายสัญลักษณ์'))
+      b?.click()
+    })
+    await new Promise((r) => setTimeout(r, 300))
+    check(`มือถือ ${width}px: กดย่อแล้วคำอธิบายสีปิดจริง`,
+          !(await page.evaluate(() => document.body.innerText.includes('ช่วงถนนน้ำท่วม'))))
   }
   await page.setViewport({ width: 1400, height: 900, isMobile: false, hasTouch: false })
   await page.reload({ waitUntil: 'domcontentloaded' })

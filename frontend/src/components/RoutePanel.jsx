@@ -368,8 +368,19 @@ function StationList({ stations }) {
   )
 }
 
-function ObstacleList({ obstacles, onVote, votedIds }) {
+function ObstacleList({ obstacles, onVote, votedIds, otherEvidence = false }) {
   const { t, lang } = useT()
+  if (!obstacles?.length && otherEvidence) {
+    // The verdict above rests on something else -- flooded road stretches or
+    // gauges -- so a green "no reports on this route" beneath a red "do not
+    // go" reads as the app contradicting itself. Say only what is true: no
+    // one has filed a report here, and the evidence is in the lists below.
+    return (
+      <div className="card p-3">
+        <p className="text-sm text-slate-300">{t('rp.noUserReports')}</p>
+      </div>
+    )
+  }
   if (!obstacles?.length) {
     return (
       <div className="card border-emerald-800/50 bg-emerald-950/30 p-4">
@@ -738,8 +749,15 @@ export default function RoutePanel({
           </div>
 
           <CameraStrip cameras={route?.cameras} onOpen={onOpenCamera} />
-          <ObstacleList obstacles={route?.obstacles} onVote={vote} votedIds={votedIds} />
+          {/* What decided the verdict comes first: flooded road stretches
+              are the strongest evidence this app has after a camera. */}
           <RoadList roads={route?.roads} attribution={result?.roads_attribution} />
+          <ObstacleList
+            obstacles={route?.obstacles}
+            onVote={vote}
+            votedIds={votedIds}
+            otherEvidence={Boolean(route?.roads?.length || route?.stations?.length || (route && route.verdict !== 'clear'))}
+          />
           <StationList stations={route?.stations} />
 
           <div className="flex flex-wrap gap-2">

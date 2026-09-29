@@ -204,6 +204,51 @@ def avoid_polygons(db: Session, bbox: tuple[float, float, float, float]) -> dict
     return {"type": "MultiPolygon", "coordinates": polygons}
 
 
+def nearby_road_polygons(segments: list[dict] | None, bbox: tuple[float, float, float, float],
+                         limit: int = 60, blocked_only: bool = False) -> dict | None:
+    """Avoid areas for every flooded stretch near the corridor, not only the
+    ones on the routes already found.
+
+    Steering around just the water on the original route sends the detour
+    down whichever street ORS likes next, which may be under water too --
+    measured on a real route, the "flood avoidance" option came back with
+    more flooded stretches than the plain alternative. What is avoided has
+    to be the flooding, not the flooding we happened to have matched.
+
+    Bounded and ranked: impassable first, then confidence, because the
+    request has to stay small enough for the routing API to accept.
+    """
+    if not segments:
+        return None
+    min_lat, min_lng, max_lat, max_lng = bbox
+    pad = 0.00045  # about 50 m either side of the road
+
+    chosen = []
+    for seg in segments:
+        if seg["conf"] < settings.floodroads_min_conf_block:
+            continue
+        allowed = ("blocked",) if blocked_only else ("blocked", "risky")
+        if seg["sedan"] not in allowed:
+            continue
+        points = [pt for line in seg["lines"] for pt in line]
+        west = min(x for x, _ in points)
+        east = max(x for x, _ in points)
+        south = min(y for _, y in points)
+        north = max(y for _, y in points)
+        if east < min_lng or west > max_lng or north < min_lat or south > max_lat:
+            continue
+        chosen.append((seg["sedan"] != "blocked", -seg["conf"], west, south, east, north))
+
+    chosen.sort()
+    polygons = []
+    for _, _, west, south, east, north in chosen[:limit]:
+        ring = [[west - pad, south - pad], [east + pad, south - pad],
+                [east + pad, north + pad], [west - pad, north + pad]]
+        ring.append(ring[0])
+        polygons.append([ring])
+    return {"type": "MultiPolygon", "coordinates": polygons} if polygons else None
+
+
 def road_avoid_polygons(analyses: list) -> dict | None:
     """Small boxes around the confident, bad flooded stretches on the routes
     found so far, so a detour is steered off them rather than back onto them.
@@ -642,12 +687,26 @@ async def check_route(db: Session, origin: tuple[float, float], dest: tuple[floa
             _merge_polygons(
                 avoid_polygons(db, search_bbox),
                 road_avoid_polygons(analyses),
+                # Every flooded stretch near the corridor, not just the ones
+                # already matched to a route.
+                nearby_road_polygons(road_segments, search_bbox),
                 await flood_extent.avoid_near(search_bbox),
             ),
             [origin, dest],
         )
         if polygons and settings.ors_api_key:
             detour = await _ors_route(origin, dest, polygons)
+            if detour is None and LAST_ORS_FAILURE == ORS_CODE_TH[2009]:
+                # Everything walled off. Ask again avoiding only what a car
+                # genuinely cannot pass: a route through knee-deep water beats
+                # no answer, and the verdict still says what is on it.
+                fallback = drop_polygons_containing(
+                    _merge_polygons(avoid_polygons(db, search_bbox),
+                                    nearby_road_polygons(road_segments, search_bbox,
+                                                         limit=25, blocked_only=True)),
+                    [origin, dest])
+                if fallback:
+                    detour = await _ors_route(origin, dest, fallback)
             if detour:
                 detour_analysis = analyse_route(db, detour, corridor_m, camera_corridor_m,
                                                 min_confidence, road_segments)

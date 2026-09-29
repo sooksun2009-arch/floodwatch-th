@@ -126,6 +126,51 @@ check("จุดในพื้นที่จริง ๆ ตรวจเจ�
       routing._point_in_ring(13.72, 100.75, OVER_ORIGIN[0])
       and not routing._point_in_ring(13.72, 100.75, MIDWAY[0]))
 
+# ------------------------------------------------- what gets avoided
+# Steering around only the water already matched to a route sends the detour
+# down the next street, which may be flooded too.
+def seg(name, sedan, conf, w, s_, e, n):
+    return {"name": name, "sedan": sedan, "conf": conf,
+            "lines": [[[w, s_], [e, n]]]}
+
+
+NEAR = (13.60, 100.60, 13.80, 100.80)   # min_lat, min_lng, max_lat, max_lng
+SEGS = [
+    seg("ท่วมหนัก ใกล้เส้นทาง", "blocked", 0.9, 100.70, 13.70, 100.71, 13.71),
+    seg("เสี่ยง ใกล้เส้นทาง", "risky", 0.8, 100.72, 13.72, 100.73, 13.73),
+    seg("ไม่มั่นใจ", "blocked", 0.2, 100.74, 13.74, 100.75, 13.75),
+    seg("ผ่านได้", "caution", 0.9, 100.76, 13.76, 100.77, 13.77),
+    seg("ไกลออกไป", "blocked", 0.9, 101.50, 14.50, 101.51, 14.51),
+]
+
+poly = routing.nearby_road_polygons(SEGS, NEAR)
+check("เอาทุกจุดน้ำท่วมใกล้เส้นทาง ไม่ใช่แค่ที่อยู่บนเส้นทาง",
+      poly is not None and len(poly["coordinates"]) == 2, poly and len(poly["coordinates"]))
+check("ข้ามจุดที่ความมั่นใจต่ำ และจุดที่รถผ่านได้",
+      poly is not None and len(poly["coordinates"]) == 2)
+check("ข้ามจุดที่อยู่นอกกรอบเส้นทาง",
+      all(abs(c[0]) < 101 for rings in poly["coordinates"] for c in rings[0]))
+
+only_blocked = routing.nearby_road_polygons(SEGS, NEAR, blocked_only=True)
+check("โหมดสำรอง: เอาเฉพาะจุดที่รถเก๋งผ่านไม่ได้",
+      only_blocked is not None and len(only_blocked["coordinates"]) == 1, only_blocked)
+
+capped = routing.nearby_road_polygons(SEGS * 40, NEAR, limit=3)
+check("จำกัดจำนวนไม่ให้คำขอใหญ่เกิน", len(capped["coordinates"]) == 3,
+      len(capped["coordinates"]))
+check("ไม่มีถนนน้ำท่วมเลย -> None", routing.nearby_road_polygons([], NEAR) is None
+      and routing.nearby_road_polygons(None, NEAR) is None)
+
+# Each area hugs its road: a strip, not a block the size of the road's length.
+# A straight 1 km road east-west, so "thin" is measurable across it.
+straight = routing.nearby_road_polygons(
+    [seg("ถนนตรงยาว 1 กม.", "blocked", 0.9, 100.70, 13.70, 100.7093, 13.70)], NEAR)
+ring = straight["coordinates"][0][0]
+along_m = (max(c[0] for c in ring) - min(c[0] for c in ring)) * 111.32 * 0.97 * 1000
+across_m = (max(c[1] for c in ring) - min(c[1] for c in ring)) * 110.57 * 1000
+check("พื้นที่ห้ามผ่านเป็นแถบแคบทาบตามถนน ไม่ใช่กล่องเท่าความยาวถนน",
+      across_m < 150 and along_m > 900, f"ยาว {along_m:.0f} m กว้าง {across_m:.0f} m")
+
 print()
 print("=" * 60)
 print(f"{len(fails)} FAILED" if fails else "ALL ORS-DIAGNOSTIC CHECKS PASSED")

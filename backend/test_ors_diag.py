@@ -171,6 +171,36 @@ across_m = (max(c[1] for c in ring) - min(c[1] for c in ring)) * 110.57 * 1000
 check("พื้นที่ห้ามผ่านเป็นแถบแคบทาบตามถนน ไม่ใช่กล่องเท่าความยาวถนน",
       across_m < 150 and along_m > 900, f"ยาว {along_m:.0f} m กว้าง {across_m:.0f} m")
 
+# ------------------------------------------------- water at the doorstep
+# No detour can route around the road you are standing on, so a route that
+# still says "do not go" there is right, and should say why.
+class FakeGeo:
+    def __init__(self, km):
+        self.distance_km = km
+
+
+class FakeAnalysis:
+    def __init__(self, km, roads):
+        self.geometry = FakeGeo(km)
+        self.obstacles = []
+        self.roads = roads
+
+
+def road_at(km, sedan="blocked", confident=True):
+    return {"along_km": km, "sedan": sedan, "confident": confident}
+
+
+check("ผ่านไม่ได้ตั้งแต่ต้นทาง -> บอกว่าต้นทาง",
+      routing._blocked_at_an_end(FakeAnalysis(20, [road_at(0.04)])) == "ต้นทาง")
+check("ผ่านไม่ได้ตรงปลายทาง -> บอกว่าปลายทาง",
+      routing._blocked_at_an_end(FakeAnalysis(20, [road_at(19.9)])) == "ปลายทาง")
+check("ผ่านไม่ได้กลางทาง -> ไม่ใช่กรณีนี้ (เลี่ยงได้)",
+      routing._blocked_at_an_end(FakeAnalysis(20, [road_at(10)])) is None)
+check("จุดที่ความมั่นใจต่ำ ไม่นับว่าผ่านไม่ได้",
+      routing._blocked_at_an_end(FakeAnalysis(20, [road_at(0.04, confident=False)])) is None)
+check("จุดที่แค่เสี่ยง ไม่นับว่าผ่านไม่ได้",
+      routing._blocked_at_an_end(FakeAnalysis(20, [road_at(0.04, sedan="risky")])) is None)
+
 print()
 print("=" * 60)
 print(f"{len(fails)} FAILED" if fails else "ALL ORS-DIAGNOSTIC CHECKS PASSED")

@@ -574,6 +574,28 @@ def analyse_route(db: Session, geometry: RouteGeometry, corridor_m: int,
                          worst_level=worst, score=score)
 
 
+# How close to an end counts as "at" it. Far enough to cover the first turn
+# out of a soi, near enough that calling it the endpoint is honest.
+END_OF_ROUTE_KM = 0.3
+
+
+def _blocked_at_an_end(analysis: RouteAnalysis) -> str | None:
+    """"ต้นทาง" or "ปลายทาง" when the impassable part is right at one end."""
+    total = analysis.geometry.distance_km
+    marks = [(o.along_km, o.report.level in ("severe", "closed") or o.report.passable is False)
+             for o in analysis.obstacles]
+    marks += [(r["along_km"], r["confident"] and r["sedan"] == "blocked")
+              for r in analysis.roads]
+    for along_km, blocking in marks:
+        if not blocking:
+            continue
+        if along_km <= END_OF_ROUTE_KM:
+            return "ต้นทาง"
+        if total - along_km <= END_OF_ROUTE_KM:
+            return "ปลายทาง"
+    return None
+
+
 def build_advice(analysis: RouteAnalysis, degraded: str | None) -> str:
     """Plain-Thai verdict paragraph, the text the chatbot reuses verbatim."""
     geo = analysis.geometry
@@ -744,6 +766,16 @@ async def check_route(db: Session, origin: tuple[float, float], dest: tuple[floa
                 "ไม่ได้แปลว่าถนนผ่านไม่ได้ และไม่ใช่ภาพสด — "
                 "ถ้ามีเส้นเลี่ยงให้เลือก ระบบจะเสนอไว้ด้านล่าง")
         degraded = f"{degraded} {seen}" if degraded else seen
+
+    # Water at the doorstep. When what blocks the route sits a few metres from
+    # the start or the finish, no detour can help, and a route labelled "flood
+    # avoidance" that still says "do not go" reads as the feature being
+    # broken. Say which it is instead.
+    stuck = _blocked_at_an_end(primary)
+    if stuck and VERDICT_ORDER[primary.verdict] >= VERDICT_ORDER["risky"]:
+        note = (f"จุดที่ผ่านไม่ได้อยู่ตรง{stuck} — ไม่มีเส้นทางไหนเลี่ยงได้ "
+                f"ต้องรอน้ำลด หรือเปลี่ยนจุด{stuck}")
+        degraded = f"{degraded} {note}" if degraded else note
 
     recommendation = None
     if best is not primary and VERDICT_ORDER[best.verdict] < VERDICT_ORDER[primary.verdict]:

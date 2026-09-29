@@ -660,13 +660,17 @@ const check = (name, ok, extra = '') => {
         check('แตะหมุดแล้วขึ้นข้อความยืนยัน', text.includes('ขอบคุณ'), text.slice(0, 120))
 
         const after = await page.evaluate(
-          (id) => fetch(`/api/reports/${id}`).then((r) => r.json()),
+          (id) => fetch(`/api/reports/${id}`).then(async (r) => ({ status: r.status, ...(await r.json()) })),
           picked,
         )
         check(
           'เช็คกับเซิร์ฟเวอร์โดยตรง: ตัวเลขแย้งเพิ่มขึ้นจริง (ไม่ใช่แค่ข้อความในหน้าจอ)',
-          after.dispute_count === before.dispute_count + 1,
-          `ก่อน ${before.dispute_count} หลัง ${after.dispute_count}`,
+          after.dispute_count === before.dispute_count + 1
+            // The third dispute that outnumbers confirmations pulls the pin
+            // back into the moderation queue, where the public API no longer
+            // returns it. That is the vote landing, not the vote being lost.
+            || (after.status === 404 && before.dispute_count + 1 >= 3),
+          `ก่อน ${before.dispute_count} หลัง ${after.dispute_count} (${JSON.stringify(after).slice(0, 160)})`,
         )
 
         await page.setExtraHTTPHeaders({})

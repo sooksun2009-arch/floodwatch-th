@@ -359,7 +359,12 @@ export default function Home() {
     <div className="mx-auto max-w-7xl gap-4 p-3 sm:p-4 lg:flex lg:items-start">
       <div className="lg:order-2 lg:flex-1">
         <SafetyNotice />
-        <div className="relative h-[46vh] overflow-hidden rounded-2xl border border-slate-800 lg:sticky lg:top-20 lg:h-[calc(100vh-8.5rem)]">
+        {/* Taller on a phone than it was. A user reported being able to spread
+              to zoom in but not pinch to zoom out: a pinch starts with the
+              fingers apart, and in a 46vh box one of them lands outside the
+              map, so MapLibre sees a single touch and pans instead. More room
+              is also what makes dropping a pin on the right spot possible. */}
+          <div className="relative h-[60vh] min-h-[22rem] overflow-hidden rounded-2xl border border-slate-800 lg:sticky lg:top-20 lg:h-[calc(100vh-8.5rem)]">
           <Suspense
             fallback={
               <div className="flex h-full items-center justify-center text-sm text-slate-500">

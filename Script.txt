@@ -1,0 +1,429 @@
+/**
+ * FloodWatch TH — keep-alive + เฝ้าระวัง (Google Apps Script)
+ *
+ * Render แพลนฟรีจะหลับเมื่อไม่มีคนเข้า แล้วตื่นช้าถึง 50 วินาที
+ * ซึ่งนานเกินไปสำหรับคนที่กำลังจะตัดสินใจขับรถฝ่าน้ำท่วม
+ * สคริปต์นี้ยิงเข้าไปเป็นระยะเพื่อไม่ให้หลับ
+ *
+ * และเนื่องจากมันรันอยู่แล้ว จึงให้มันตรวจสุขภาพระบบไปด้วย:
+ * เว็บล่ม หรือข้อมูลระดับน้ำค้างเกินกำหนด จะส่งอีเมลแจ้ง
+ * ("ยังตอบ 200 อยู่" ไม่ได้แปลว่าข้อมูลยังใช้ได้ — บทเรียนจากตอน deploy)
+ *
+ * วิธีใช้
+ *   1. เปิด script.google.com → New project
+ *   2. วางไฟล์นี้ทับโค้ดเดิมทั้งหมด
+ *   3. เลือกฟังก์ชัน setup แล้วกด Run (ครั้งแรกจะขออนุญาต ให้กดอนุญาต)
+ *   4. จบ — setup ตั้ง trigger ให้เอง ไม่ต้องไปกดในหน้า Triggers
+ */
+
+const BASE_URL = 'https://floodwatch-th.onrender.com';
+
+/**
+ * ขึ้นบรรทัดใหม่ เขียนเป็นรหัสอักขระแทนการใช้ escape
+ * เพราะไฟล์นี้ถูกแก้ด้วยสคริปต์บ่อย และ escape เพี้ยนได้ง่ายระหว่างทาง
+ */
+const NEWLINE = String.fromCharCode(10);
+
+/** ทุกกี่นาทีจึงยิงหนึ่งครั้ง Render หลับหลังว่าง 15 นาที จึงตั้ง 10 ให้มีระยะเผื่อ */
+const PING_MINUTES = 10;
+
+/**
+ * โทเคนสำหรับส่งข้อมูล กทม. เข้าเว็บ ต้องตรงกับ INGEST_TOKEN ที่ตั้งไว้ใน Render
+ * เว้นว่างไว้ = ไม่ทำหน้าที่รีเลย์ ยิงกันหลับอย่างเดียว
+ */
+const INGEST_TOKEN = '';
+
+/** หน้าเว็บของสำนักการระบายน้ำ กทม. ที่เซิร์ฟเวอร์เราเข้าไม่ถึงจากต่างประเทศ */
+const BMA_BASE = 'https://weather.bangkok.go.th/water';
+
+/**
+ * ดึงหน้ารายละเอียดกี่สถานีต่อรอบ เอาไว้เก็บพิกัด
+ * หน้าละ ~876 KB จึงค่อย ๆ เก็บ ไม่รีบ เพราะพิกัดเก็บครั้งเดียวใช้ตลอด
+ * และเว็บเขามีการจำกัดจำนวนครั้ง ยิงรัวจะโดนปฏิเสธ
+ */
+const COORDS_PER_RUN = 25;
+
+/** ถ้าข้อมูลระดับน้ำสดน้อยกว่านี้ ถือว่าการซิงก์มีปัญหา */
+const MIN_FRESH_STATIONS = 300;
+
+/** กันอีเมลถล่ม: แจ้งเตือนเรื่องเดิมซ้ำได้ไม่เกินหนึ่งครั้งในกี่ชั่วโมง */
+const ALERT_COOLDOWN_HOURS = 6;
+
+/**
+ * รายงานที่รออนุมัติเตือนถี่กว่านั้น เพราะมันมีอายุ
+ * คนแจ้งว่าน้ำท่วมตอนตีสอง ถ้ากว่าจะรู้ตอนเช้า ข้อมูลก็หมดประโยชน์ไปแล้ว
+ * และเตือนซ้ำเฉพาะเมื่อมีรายการใหม่เพิ่ม ไม่ใช่ย้ำเรื่องเดิมทุกรอบ
+ */
+const PENDING_REMINDER_MINUTES = 30;
+
+/**
+ * แจ้งเตือนผ่าน Telegram ด้วย (ไม่บังคับ)
+ * อีเมลบนมือถือมักเงียบ ส่วน Telegram เด้งเสียงเหมือนแชท
+ * วิธีตั้ง: ทักหา @BotFather ใน Telegram -> /newbot -> ได้โทเคนมาใส่ช่องล่าง
+ *          แล้วทักหาบอทตัวเองหนึ่งข้อความ -> รัน telegramChatId() เพื่อหาเลขห้อง
+ * เว้นว่างไว้ = ใช้อีเมลอย่างเดียว
+ */
+const TELEGRAM_BOT_TOKEN = '8657440854:AAF62rh1maXxjuOVbieg7WwMd3FVL_CcvNs';
+const TELEGRAM_CHAT_ID = '8365650438';
+
+/**
+ * ตั้งค่าให้ทำงานอัตโนมัติ — รันฟังก์ชันนี้ครั้งเดียวก็พอ
+ * ลบ trigger เดิมของตัวเองก่อน เพื่อไม่ให้รันซ้อนกันเวลากด Run หลายรอบ
+ */
+function setup() {
+  ScriptApp.getProjectTriggers()
+    .filter((t) => t.getHandlerFunction() === 'keepAwake')
+    .forEach((t) => ScriptApp.deleteTrigger(t));
+
+  ScriptApp.newTrigger('keepAwake').timeBased().everyMinutes(PING_MINUTES).create();
+
+  const result = keepAwake();
+  Logger.log('ตั้ง trigger ทุก %s นาทีแล้ว — ผลการยิงครั้งแรก: %s', PING_MINUTES, result);
+  return result;
+}
+
+/** ปิดการทำงานอัตโนมัติ */
+function stop() {
+  ScriptApp.getProjectTriggers()
+    .filter((t) => t.getHandlerFunction() === 'keepAwake')
+    .forEach((t) => ScriptApp.deleteTrigger(t));
+  Logger.log('ลบ trigger แล้ว');
+}
+
+/** ฟังก์ชันที่ trigger เรียกทุกรอบ */
+function keepAwake() {
+  const health = fetchJson('/api/health');
+
+  if (!health.ok) {
+    alertOnce('down', 'FloodWatch TH: เว็บไม่ตอบสนอง',
+              'เรียก /api/health ไม่สำเร็จ\n\n' + health.error +
+              '\n\nดูสถานะได้ที่ https://dashboard.render.com');
+    Logger.log('เว็บไม่ตอบ: %s', health.error);
+    return 'ไม่ตอบสนอง';
+  }
+
+  // ตื่นแล้ว ทีนี้ดูว่าข้อมูลยังสดอยู่ไหม
+  const stations = fetchJson('/api/stations/summary');
+  if (!stations.ok) {
+    Logger.log('ยิง health ผ่าน แต่ดึงสรุปสถานีไม่ได้: %s', stations.error);
+    return 'ตื่นแล้ว แต่อ่านข้อมูลสถานีไม่ได้';
+  }
+
+  const s = stations.data;
+  const summary = 'สถานี ' + s.total + ' จุด · สด ' + s.fresh +
+                  ' · ค้าง ' + s.stale + ' · ล้นตลิ่ง ' + s.overflowing;
+
+  if (s.fresh < MIN_FRESH_STATIONS) {
+    alertOnce('stale',
+              'FloodWatch TH: ข้อมูลระดับน้ำอาจค้าง',
+              'เว็บตอบปกติ แต่ข้อมูลที่ยังสดมีเพียง ' + s.fresh + ' จุด ' +
+              '(เกณฑ์ที่ตั้งไว้ ' + MIN_FRESH_STATIONS + ')\n\n' + summary +
+              '\n\nแปลว่าการซิงก์จากต้นทางน่าจะมีปัญหา ทั้งที่หน้าเว็บยังดูปกติดี' +
+              '\nตรวจ log ได้ที่ https://dashboard.render.com');
+  } else {
+    clearAlert('stale');
+  }
+  clearAlert('down');
+
+  Logger.log(summary);
+
+  // รายงานที่รออนุมัติ — เรื่องเดียวที่ต้องให้คนกดอะไรสักอย่าง
+  try {
+    checkPending();
+  } catch (e) {
+    Logger.log('ตรวจรายงานรออนุมัติไม่สำเร็จ: %s', e);
+  }
+
+  // ตื่นแล้วและข้อมูลปกติ ค่อยทำหน้าที่สะพานส่งข้อมูล กทม.
+  // ล้มเหลวตรงนี้ต้องไม่ทำให้การกันหลับพัง มันคนละหน้าที่กัน
+  let relayed = '';
+  try {
+    relayed = relayBMA();
+  } catch (e) {
+    Logger.log('รีเลย์ กทม. ล้มเหลว: %s', e);
+    relayed = 'รีเลย์ล้มเหลว';
+  }
+
+  return summary + (relayed ? ' | ' + relayed : '');
+}
+
+/**
+ * รีเลย์ข้อมูลระดับน้ำคลองของ กทม. เข้าเว็บเรา
+ *
+ * เซิร์ฟเวอร์เราอยู่สิงคโปร์และเว็บ กทม. ไม่รับการเชื่อมต่อจากต่างประเทศ
+ * (ไม่ใช่ถูกปฏิเสธ แต่ต่อไม่ติดเลย) สคริปต์นี้รันบนเครื่องของ Google
+ * ซึ่งถ้าต่อได้ ก็ทำหน้าที่เป็นสะพานส่งข้อมูลเข้ามาแทน
+ *
+ * ตัวสคริปต์เป็นแค่ท่อ ไม่แกะข้อมูลเอง — ส่งหน้าเว็บดิบ ๆ เข้าไปให้เซิร์ฟเวอร์แกะ
+ * เพราะโค้ดแกะข้อมูลมีเทสคุมอยู่แล้ว และถ้าหน้าเว็บ กทม. เปลี่ยนโครงสร้าง
+ * จะได้แก้ที่เดียว ไม่ต้องมาไล่แก้สคริปต์ในบัญชี Google ของใครอีกคน
+ *
+ * ยกเว้นพิกัด ซึ่งอยู่ในหน้าใหญ่ 876 KB ต่อสถานี ไม่คุ้มจะส่งเข้าไป 300 รอบ
+ * เพื่อตัวเลขสองตัวที่ไม่เคยเปลี่ยน จึงแกะตรงนี้แล้วส่งไปครั้งเดียว
+ */
+function relayBMA() {
+  if (!INGEST_TOKEN) return 'ไม่ได้ตั้ง INGEST_TOKEN — ข้ามการรีเลย์';
+
+  let summary;
+  try {
+    summary = UrlFetchApp.fetch(BMA_BASE + '/Summary', { muteHttpExceptions: true });
+  } catch (e) {
+    Logger.log('ต่อเว็บ กทม. ไม่ได้: %s', e);
+    return 'ต่อเว็บ กทม. ไม่ได้';
+  }
+  if (summary.getResponseCode() !== 200) {
+    // เว็บเขาจำกัดจำนวนครั้ง เจอ 403 เป็นครั้งคราวถือว่าปกติ รอบหน้าค่อยลองใหม่
+    Logger.log('เว็บ กทม. ตอบ HTTP %s', summary.getResponseCode());
+    return 'กทม. ตอบ HTTP ' + summary.getResponseCode();
+  }
+
+  // สถานีที่เว็บเราบอกไว้รอบที่แล้วว่ายังไม่มีพิกัด
+  const store = PropertiesService.getScriptProperties();
+  const pending = JSON.parse(store.getProperty('need_coords') || '[]');
+  const coords = {};
+  for (const id of pending.slice(0, COORDS_PER_RUN)) {
+    try {
+      const page = UrlFetchApp.fetch(BMA_BASE + '/StationDetail?id=' + encodeURIComponent(id),
+                                     { muteHttpExceptions: true });
+      if (page.getResponseCode() !== 200) continue;
+      // รูปแบบเดียวกับที่เซิร์ฟเวอร์ใช้: ละติจูด 12-15, ลองจิจูด 90-109
+      const m = page.getContentText()
+        .match(/(1[2-5]\.\d{4,})\s*,\s*(9\d\.\d{4,}|10\d\.\d{4,})/);
+      if (m) coords[id] = { lat: Number(m[1]), lng: Number(m[2]) };
+    } catch (e) {
+      Logger.log('ดึงพิกัดสถานี %s ไม่ได้: %s', id, e);
+    }
+    Utilities.sleep(600);   // เว็บของหน่วยงานอื่น ค่อย ๆ ขอ
+  }
+
+  const res = UrlFetchApp.fetch(BASE_URL + '/api/stations/bma/ingest', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { Authorization: 'Bearer ' + INGEST_TOKEN },
+    payload: JSON.stringify({ summary_html: summary.getContentText(), coords: coords }),
+    muteHttpExceptions: true,
+  });
+
+  if (res.getResponseCode() !== 200) {
+    Logger.log('ส่งเข้าเว็บไม่สำเร็จ: HTTP %s %s',
+               res.getResponseCode(), res.getContentText().slice(0, 200));
+    return 'ส่งเข้าเว็บไม่สำเร็จ';
+  }
+
+  const out = JSON.parse(res.getContentText());
+  store.setProperty('need_coords', JSON.stringify(out.need_coords || []));
+  const line = 'รีเลย์ กทม.: ใหม่ ' + out.created + ' อัปเดต ' + out.updated +
+               ' พิกัดใหม่ ' + out.coords_accepted + ' ยังขาดพิกัด ' +
+               (out.need_coords || []).length;
+  Logger.log(line);
+  return line;
+}
+
+/** ทดสอบว่า Google ต่อเว็บ กทม. ได้ไหม — รันครั้งเดียวเพื่อดูผล */
+function testBMA() {
+  try {
+    const res = UrlFetchApp.fetch(BMA_BASE + '/Summary', { muteHttpExceptions: true });
+    Logger.log('HTTP %s · ขนาด %s ตัวอักษร', res.getResponseCode(),
+               res.getContentText().length);
+  } catch (e) {
+    Logger.log('ต่อไม่ได้: %s', e);
+  }
+}
+
+/**
+ * เตือนเมื่อมีรายงานรออนุมัติ
+ *
+ * รายงานที่ไม่เข้าเกณฑ์ขึ้นแผนที่อัตโนมัติ (ไม่มีรูป และยังไม่มีคนที่สองยืนยัน)
+ * จะค้างอยู่ในคิวจนกว่าจะมีคนกด ซึ่งเดิมรู้ได้ทางเดียวคือเปิดหน้าผู้ดูแลเอง
+ * คืนที่ฝนถล่มคือคืนที่มีคนแจ้งเยอะที่สุด และเป็นคืนที่ผู้ดูแลหลับ
+ *
+ * เตือนเมื่อจำนวนเพิ่มขึ้น หรือเมื่อค้างอยู่นานเกิน PENDING_REMINDER_MINUTES
+ * ไม่ใช่ย้ำเรื่องเดิมทุก 10 นาทีจนคนเลิกอ่าน
+ */
+function checkPending() {
+  const stats = fetchJson('/api/stats/summary');
+  if (!stats.ok) {
+    Logger.log('อ่านสถิติไม่ได้: %s', stats.error);
+    return;
+  }
+
+  const pending = Number(stats.data.pending_moderation || 0);
+  const store = PropertiesService.getScriptProperties();
+  const lastCount = Number(store.getProperty('pending_count') || 0);
+  const lastAt = Number(store.getProperty('pending_at') || 0);
+  const now = Date.now();
+
+  if (pending === 0) {
+    // คิวว่างแล้ว ล้างสถานะเพื่อให้รายการถัดไปเตือนได้ทันที
+    store.deleteProperty('pending_count');
+    store.deleteProperty('pending_at');
+    return;
+  }
+
+  const grew = pending > lastCount;
+  const overdue = now - lastAt > PENDING_REMINDER_MINUTES * 60 * 1000;
+  if (!grew && !overdue) return;
+
+  const subject = 'FloodWatch TH: มีรายงานรออนุมัติ ' + pending + ' รายการ';
+  const body = [
+    'มีคนแจ้งน้ำท่วมเข้ามาและยังไม่ขึ้นแผนที่ รอให้คุณกดอนุมัติ',
+    '',
+    'รออนุมัติ: ' + pending + ' รายการ',
+    'ขึ้นแผนที่อยู่: ' + (stats.data.active_reports || 0) + ' รายการ',
+    'แจ้งเข้ามาใน 24 ชม.: ' + (stats.data.reports_last_24h || 0) + ' รายการ',
+    '',
+    'กดอนุมัติที่ ' + BASE_URL + '/admin',
+    '',
+    'รายงานที่แนบรูป หรือมีคนแจ้งจุดเดียวกันสองราย จะขึ้นแผนที่เองโดยไม่ต้องรอ',
+    'ที่ค้างอยู่คือรายการที่ยังไม่เข้าเกณฑ์นั้น',
+  ].join(NEWLINE);
+
+  notify(subject, body);
+  store.setProperty('pending_count', String(pending));
+  store.setProperty('pending_at', String(now));
+  Logger.log('แจ้งเตือน: รออนุมัติ %s รายการ', pending);
+}
+
+/** ส่งทั้งอีเมลและ Telegram (ถ้าตั้งค่าไว้) */
+function notify(subject, body) {
+  const to = Session.getActiveUser().getEmail();
+  if (to) {
+    try {
+      MailApp.sendEmail(to, subject, body);
+    } catch (e) {
+      Logger.log('ส่งอีเมลไม่สำเร็จ: %s', e);
+    }
+  }
+  sendTelegram(subject + NEWLINE + NEWLINE + body);
+}
+
+/** ส่งข้อความเข้า Telegram — เงียบไปถ้ายังไม่ได้ตั้งค่า */
+function sendTelegram(text) {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
+  try {
+    UrlFetchApp.fetch(
+      'https://api.telegram.org/bot' + TELEGRAM_BOT_TOKEN + '/sendMessage',
+      {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text: text,
+          disable_web_page_preview: true,
+        }),
+        muteHttpExceptions: true,
+      });
+  } catch (e) {
+    Logger.log('ส่ง Telegram ไม่สำเร็จ: %s', e);
+  }
+}
+
+/**
+ * หาเลขห้องแชทของคุณ — ทักหาบอทหนึ่งข้อความก่อน แล้วรันฟังก์ชันนี้
+ * เลขที่ได้เอาไปใส่ TELEGRAM_CHAT_ID ด้านบน
+ *
+ * บอกสาเหตุเมื่อหาไม่เจอ ไม่ใช่แค่บอกว่าไม่เจอ: โทเคนของบอทคนละตัว
+ * กับการยังไม่ได้ทักบอท ให้ผลเหมือนกันทุกประการ แต่แก้คนละแบบ
+ */
+function telegramChatId() {
+  if (!TELEGRAM_BOT_TOKEN) {
+    Logger.log('ยังไม่ได้ใส่ TELEGRAM_BOT_TOKEN');
+    return;
+  }
+  const api = 'https://api.telegram.org/bot' + TELEGRAM_BOT_TOKEN + '/';
+
+  // โทเคนนี้เป็นของบอทตัวไหน — คำถามแรกที่ต้องตอบ
+  const me = JSON.parse(
+    UrlFetchApp.fetch(api + 'getMe', { muteHttpExceptions: true }).getContentText());
+  if (!me.ok) {
+    Logger.log('โทเคนใช้ไม่ได้: %s', me.description || JSON.stringify(me));
+    return;
+  }
+  Logger.log('โทเคนนี้เป็นของบอท: @%s (%s)', me.result.username, me.result.first_name);
+
+  const res = UrlFetchApp.fetch(api + 'getUpdates', { muteHttpExceptions: true });
+  const data = JSON.parse(res.getContentText());
+  if (!data.ok) {
+    Logger.log('Telegram ปฏิเสธ: %s', data.description || JSON.stringify(data));
+    return;
+  }
+
+  const updates = data.result || [];
+  if (!updates.length) {
+    const hook = JSON.parse(
+      UrlFetchApp.fetch(api + 'getWebhookInfo', { muteHttpExceptions: true }).getContentText());
+    if (hook.ok && hook.result && hook.result.url) {
+      Logger.log('บอทตัวนี้ตั้ง webhook ไว้ที่ %s — ข้อความจึงไม่มาทางนี้', hook.result.url);
+      return;
+    }
+    Logger.log('ยังไม่เห็นข้อความจาก @%s — ทักหาบอท "ตัวนี้" หนึ่งข้อความก่อน แล้วรันใหม่',
+               me.result.username);
+    return;
+  }
+
+  const chat = updates[updates.length - 1].message.chat;
+  Logger.log('เลขห้องแชทของคุณคือ %s (%s)', chat.id, chat.first_name || chat.title || '');
+  return chat.id;
+}
+
+
+/** ดึง JSON จาก API ของเรา คืน {ok, data} หรือ {ok:false, error} */
+function fetchJson(path) {
+  try {
+    const res = UrlFetchApp.fetch(BASE_URL + path, {
+      muteHttpExceptions: true,
+      // เว็บที่เพิ่งตื่นจากหลับใช้เวลาได้ถึง ~50 วินาที
+      validateHttpsCertificates: true,
+    });
+    const code = res.getResponseCode();
+    if (code !== 200) return { ok: false, error: 'HTTP ' + code };
+    return { ok: true, data: JSON.parse(res.getContentText()) };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
+/**
+ * ส่งอีเมลแจ้งเตือน แต่ไม่ส่งซ้ำเรื่องเดิมถี่เกินไป
+ * ระบบที่ส่งเมลทุก 10 นาทีจะถูกมองข้ามภายในวันเดียว
+ */
+function alertOnce(key, subject, body) {
+  const store = PropertiesService.getScriptProperties();
+  const prop = 'alerted_' + key;
+  const last = Number(store.getProperty(prop) || 0);
+  const now = Date.now();
+
+  if (now - last < ALERT_COOLDOWN_HOURS * 3600 * 1000) return;
+
+  notify(subject, body);
+  store.setProperty(prop, String(now));
+}
+
+/** ปัญหาหายแล้ว รีเซ็ตเพื่อให้ครั้งหน้าแจ้งได้ทันที */
+function clearAlert(key) {
+  PropertiesService.getScriptProperties().deleteProperty('alerted_' + key);
+}
+/** ส่งข้อความทดสอบเข้า Telegram — รันเพื่อยืนยันว่าถึงจริง */
+function testTelegram() {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    Logger.log('ยังไม่ได้ตั้ง TELEGRAM_BOT_TOKEN หรือ TELEGRAM_CHAT_ID');
+    return;
+  }
+  const res = UrlFetchApp.fetch(
+    'https://api.telegram.org/bot' + TELEGRAM_BOT_TOKEN + '/sendMessage',
+    {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({
+        chat_id: TELEGRAM_CHAT_ID,
+        text: 'FloodWatch TH: ทดสอบการแจ้งเตือน ถ้าเห็นข้อความนี้แปลว่าตั้งค่าถูกแล้ว',
+      }),
+      muteHttpExceptions: true,
+    });
+  const data = JSON.parse(res.getContentText());
+  if (data.ok) {
+    Logger.log('ส่งสำเร็จ — ไปดูใน Telegram ได้เลย');
+  } else {
+    Logger.log('ส่งไม่สำเร็จ: %s', data.description || res.getContentText());
+  }
+}

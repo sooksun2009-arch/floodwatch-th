@@ -195,6 +195,10 @@ function HowTo({ onClose }) {
             <p className="mt-2" dangerouslySetInnerHTML={{ __html: t('how.updateReport') }} />
           </section>
 
+          <section>
+            <p dangerouslySetInnerHTML={{ __html: t('how.shelters') }} />
+          </section>
+
           <section className="rounded-xl border border-amber-900/60 bg-amber-950/30 p-3">
             <h4 className="font-semibold text-amber-200">{t('rp.limitsHeading')}</h4>
             <p className="mt-1 text-amber-100/80">

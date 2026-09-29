@@ -231,6 +231,17 @@ export default function AreaCard({ onFocus }) {
             </div>
           )}
           {note && <p className="text-amber-300">{note}</p>}
+          <p>
+            <a
+              href="https://flood69.peoplesparty.or.th/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold underline decoration-white/30 underline-offset-2 hover:text-white"
+            >
+              {t('area.shelters')}
+            </a>
+            <span className="ml-2 opacity-60">{t('area.sheltersNote')}</span>
+          </p>
           <p className="opacity-50">{t('area.privacy')}</p>
         </div>
       )}

@@ -4,6 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0f172a" />
+    <!-- Installable: "Add to Home screen" opens it full-screen like an app.
+         No service worker on purpose. This app's whole value is live data, and
+         a cached shell that outlives a deploy would show yesterday's version
+         to exactly the people opening it during a flood. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="FloodWatch" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="description" content="เช็คน้ำท่วมบนเส้นทางที่จะไป จากกล้อง CCTV รายงานของผู้ใช้ และแชทบอท" />
     <title>FloodWatch TH — เช็คน้ำท่วมก่อนออกรถ</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f172a'/%3E%3Cpath d='M4 19c3-3 5-3 8 0s5 3 8 0 5-3 8 0' stroke='%2338bdf8' stroke-width='2.6' fill='none' stroke-linecap='round'/%3E%3Cpath d='M4 25c3-3 5-3 8 0s5 3 8 0 5-3 8 0' stroke='%230ea5e9' stroke-width='2.6' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='10' r='3.2' fill='%23f97316'/%3E%3C/svg%3E" />

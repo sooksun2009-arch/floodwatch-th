@@ -1,0 +1,16 @@
+{
+  "name": "FloodWatch TH — เช็คน้ำท่วมก่อนออกรถ",
+  "short_name": "FloodWatch",
+  "description": "เช็คน้ำท่วมบนเส้นทางที่จะไป จากกล้อง CCTV รายงานของผู้ใช้ ถนนน้ำท่วม และสถานีวัดน้ำ",
+  "lang": "th",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

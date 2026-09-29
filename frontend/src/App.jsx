@@ -14,7 +14,10 @@ const Login = lazy(() => import('./pages/Login'))
 const Admin = lazy(() => import('./pages/Admin'))
 
 const tabClass = ({ isActive }) =>
-  `rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+  // shrink-0 + nowrap: on a phone the row used to squeeze each label into a
+  // column one or two letters wide ("ภ ร"). Now the labels keep their shape
+  // and the row scrolls sideways instead.
+  `shrink-0 whitespace-nowrap rounded-lg px-2 py-1.5 text-sm font-medium transition-colors sm:px-3 ${
     isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-slate-200'
   }`
 
@@ -192,7 +195,7 @@ function Nav() {
           <span className="text-xl">🌊</span>
           <span className="hidden sm:inline">FloodWatch TH</span>
         </Link>
-        <nav className="flex flex-1 items-center gap-0.5 overflow-x-auto">
+        <nav className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
           <NavLink to="/" className={tabClass} end>
             {t('nav.route')}
           </NavLink>

@@ -96,10 +96,15 @@ async def at(lat: float, lng: float) -> dict:
 
     now = datetime.now(BANGKOK)
     hours: list[dict] = []
+    forecast_error = None
     try:
         hours = _hours(await _open_meteo(lat, lng), now)
     except Exception as exc:
-        logger.warning("ดึงพยากรณ์ฝนจาก Open-Meteo ไม่สำเร็จ: %s", type(exc).__name__)
+        # Status or exception type only -- enough to diagnose from outside the
+        # container, nothing from the upstream body.
+        forecast_error = (f"HTTP {exc.response.status_code}"
+                          if isinstance(exc, httpx.HTTPStatusError) else type(exc).__name__)
+        logger.warning("ดึงพยากรณ์ฝนจาก Open-Meteo ไม่สำเร็จ: %s", forecast_error)
     observed = None
     try:
         observed = await _observed(lat, lng)
@@ -107,7 +112,8 @@ async def at(lat: float, lng: float) -> dict:
         logger.warning("อ่านฝนจากกล้องไม่สำเร็จ: %s", type(exc).__name__)
 
     value = {"now": observed, "hours": hours,
-             "attribution": ATTRIBUTION if hours else None}
+             "attribution": ATTRIBUTION if hours else None,
+             "forecast_error": forecast_error}
     # A failed fetch is not cached for long: the next person should retry.
     if hours:
         _cache[key] = (time.monotonic(), value)

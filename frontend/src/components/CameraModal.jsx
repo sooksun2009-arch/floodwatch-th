@@ -106,6 +106,61 @@ function SnapshotPlayer({ cameraId, refreshSec, onError }) {
   )
 }
 
+/**
+ * Rain at this camera: now, and the next three hours. The one weather question
+ * that matters before driving towards it -- is more water on the way in the
+ * time it takes to get there. Not a week's outlook: that answers a different
+ * question, and it would push the picture itself off a phone screen.
+ */
+function RainStrip({ camera }) {
+  const [data, setData] = useState(null)
+
+  useEffect(() => {
+    let alive = true
+    setData(null)
+    fetch(`/api/rain/at?lat=${camera.lat}&lng=${camera.lng}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => alive && setData(d))
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [camera.id])
+
+  if (!data || (!data.now && !data.hours?.length)) return null
+  const tone = (p) =>
+    p >= 70 ? 'border-sky-500 bg-sky-500/20 text-sky-100'
+      : p >= 40 ? 'border-sky-700 bg-sky-900/40 text-sky-200'
+        : 'border-slate-700 bg-slate-900 text-slate-300'
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-slate-800 px-4 py-3 text-xs">
+      {data.now && (
+        <span className={data.now.raining ? 'font-semibold text-sky-300' : 'text-slate-400'}>
+          {data.now.raining
+            ? `🌧️ ฝนกำลังตกแถวนี้${data.now.level ? ` (${data.now.level})` : ''}`
+            : '☁️ กล้องแถวนี้ยังไม่เห็นฝน'}
+        </span>
+      )}
+      {data.hours?.length > 0 && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-slate-500">3 ชม.ข้างหน้า</span>
+          {data.hours.map((h, i) => (
+            <span key={h.time} className={`rounded-lg border px-1.5 py-0.5 text-center ${tone(h.probability ?? 0)}`}>
+              {/* The first slot is the hour already under way. */}
+              {i === 0 ? 'ชม.นี้' : h.time} · {h.probability ?? '–'}%
+              {h.mm > 0 && <span className="opacity-80"> · {h.mm} มม.</span>}
+            </span>
+          ))}
+        </div>
+      )}
+      <span className="w-full text-[10px] text-slate-600">
+        {data.attribution ? `${data.attribution} · ` : ''}ฝนตกไม่ได้แปลว่าถนนท่วม ดูภาพกล้องประกอบ
+      </span>
+    </div>
+  )
+}
+
 export default function CameraModal({ camera, onClose, onReportHere }) {
   const [error, setError] = useState(null)
 
@@ -206,6 +261,8 @@ export default function CameraModal({ camera, onClose, onReportHere }) {
             />
           )}
         </div>
+
+        <RainStrip camera={camera} />
 
         <div className="flex flex-wrap items-center gap-2 border-t border-slate-800 p-4">
           <button className="btn-danger text-sm" onClick={() => onReportHere?.(camera)}>

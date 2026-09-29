@@ -325,6 +325,10 @@ class Settings(BaseSettings):
     # How close a segment's points must be to the route to run "along" it.
     floodroads_near_m: int = 30
 
+    # Rain at one camera: Open-Meteo hourly forecast (free, no key, CC BY 4.0).
+    open_meteo_url: str = "https://api.open-meteo.com/v1/forecast"
+    weather_at_cache_sec: int = 900
+
 
 def _safe_header(value: str, fallback: str) -> str:
     """Make a config string safe to send as an HTTP header value.

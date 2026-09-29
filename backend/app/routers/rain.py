@@ -1,7 +1,7 @@
 """Rain radar tiles and wet-camera list, proxied so the key stays server-side."""
-from fastapi import APIRouter, HTTPException, Path, Response, status
+from fastapi import APIRouter, HTTPException, Path, Query, Response, status
 
-from .. import rain
+from .. import rain, weather_at
 
 router = APIRouter(prefix="/api/rain", tags=["rain"])
 
@@ -33,6 +33,18 @@ async def diagnose():
     calls were refused outright.
     """
     return await rain.probe_all()
+
+
+@router.get("/at", response_model=dict)
+async def rain_at(lat: float = Query(ge=5, le=21), lng: float = Query(ge=97, le=106)):
+    """Rain at one place -- a camera -- now and for the next three hours.
+
+    Called with a camera's position, never the visitor's.
+    """
+    try:
+        return await weather_at.at(lat, lng)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
 
 @router.get("/cameras", response_model=dict)

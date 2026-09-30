@@ -77,7 +77,14 @@ with TestClient(app) as c:
     auth = {"Authorization": f"Bearer {tok}"}
 
     data = c.get("/api/visits/summary", headers=auth).json()
-    hours = {h["hour"]: h["views"] for h in data["hours"]}
+    # Read the affected day out of the table, not out of "today": the summary's
+    # hourly chart only ever covers the current date, so these checks passed on
+    # 2026-09-29 and then broke by themselves the following morning — a test
+    # that only works on one day is a test that stops watching.
+    with SessionLocal() as db:
+        hours = {h: v for h, v in db.execute(text(
+            "SELECT hour, SUM(views) FROM visit_stats WHERE day = '2026-09-29' "
+            "GROUP BY hour")).all()}
 
     check("ชั่วโมง 0 (UTC) ไม่มีข้อมูลค้างแล้ว", hours.get(0, 0) == 0, hours)
     check("ย้ายไปชั่วโมง 7 (07:00 น. ไทย) ถูกต้อง", hours.get(7) == 210, hours)

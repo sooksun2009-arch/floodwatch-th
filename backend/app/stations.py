@@ -11,6 +11,7 @@ Source: https://api-v3.thaiwater.net (คลังข้อมูลน้ำแ
 Attribution is stored per station in `agency` and shown in the UI.
 """
 import logging
+from collections import deque
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -231,6 +232,13 @@ async def sync(db: Session) -> dict:
 # sync fills it within seconds of a restart.
 LAST_SYNC: dict[str, dict] = {}
 
+# The last few runs, newest last. One snapshot of "the most recent sync" cannot
+# answer the question that actually comes up at 4am — "has this been failing for
+# hours, or is the source simply quiet tonight?" — because the next run
+# overwrites it. Kept in memory and deliberately short: it is for reading an
+# incident that is still happening, not for keeping records.
+SYNC_HISTORY: deque = deque(maxlen=24)
+
 
 async def sync_all(db: Session) -> dict:
     """Refresh every gauge source. One failing source must not stop the others."""
@@ -251,7 +259,37 @@ async def sync_all(db: Session) -> dict:
             # of ours — nothing about a visitor.
             "error": None if outcome.get("ok") else outcome.get("error"),
         }
+
+    # How fresh the upstream's own readings are, recorded beside our run. The
+    # two are different facts and were being confused: a night when every gauge
+    # reads six hours old looks identical, from a count of "fresh stations", to
+    # our sync having died -- and the alert said the sync had died.
+    try:
+        newest = newest_measured_at(db)
+    except Exception:  # bookkeeping must never be the thing that breaks a sync
+        newest = None
+    SYNC_HISTORY.append({
+        "at": now,
+        "ok": all(bool(o.get("ok")) for o in results.values()),
+        "updated": sum(o.get("updated", 0) for o in results.values()),
+        "created": sum(o.get("created", 0) for o in results.values()),
+        "newest_measured_at": newest,
+    })
     return results
+
+
+def newest_measured_at(db: Session) -> datetime | None:
+    """When the freshest reading we hold was taken at the gauge.
+
+    Not when we fetched it: the national source goes quiet overnight, and the
+    honest question is how old the water levels are, not how recently we asked.
+    """
+    from sqlalchemy import func
+
+    value = db.execute(select(func.max(WaterStation.measured_at))).scalar()
+    if value is not None and value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value
 
 
 def stale_cutoff() -> datetime:

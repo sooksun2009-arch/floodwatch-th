@@ -16,7 +16,9 @@ from ..geo import bbox_around, parse_bbox
 from ..models import STATION_SITUATION_TH, User, WaterStation
 from ..schemas import WaterStationOut
 from ..services import log_action, station_to_out as to_out
-from ..stations import LAST_SYNC, stale_cutoff, sync_all
+from ..stations import (
+    LAST_SYNC, SYNC_HISTORY, newest_measured_at, stale_cutoff, sync_all,
+)
 
 router = APIRouter(prefix="/api/stations", tags=["water-stations"])
 
@@ -112,6 +114,14 @@ def summary(db: Session = Depends(get_db)):
         "stale": sum(1 for s in rows if not fresh(s)),
         "by_situation": by_level,
         "last_synced_at": latest,
+        # When the freshest reading was taken at the gauge, which is a
+        # different fact from when we last fetched. Watching only the count of
+        # fresh stations cannot tell "the source is quiet tonight" apart from
+        # "our sync is dead", and the alert was asserting the second whenever
+        # the first happened -- at 4am, about something nobody can act on.
+        "newest_measured_at": newest_measured_at(db),
+        "stale_after_hours": settings.station_stale_hours,
+        "recent_syncs": list(SYNC_HISTORY),
         # Why a source is missing, rather than only that the count looks low.
         # Bangkok's gauges have been absent since the first deploy and the only
         # place that said so was a log line nobody could reach from outside.

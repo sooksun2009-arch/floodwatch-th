@@ -72,6 +72,13 @@ const COORDS_DELAY_MS = 600;
 /** ถ้าข้อมูลระดับน้ำสดน้อยกว่านี้ ถือว่าการซิงก์มีปัญหา */
 const MIN_FRESH_STATIONS = 300;
 
+/**
+ * ต้นทาง (คลังข้อมูลน้ำแห่งชาติ) เงียบข้ามคืนเป็นปกติ วัดเมื่อ 2026-09-30:
+ * ตี 4 ทุกสถานีอายุเกิน 6 ชม. พร้อมกัน พอ 9 โมงเช้ามี 474 จาก 806 สถานี
+ * รายงานภายในชั่วโมงเดียว เกินค่านี้คือเงียบนานกว่าคืนหนึ่ง ซึ่งผิดปกติจริง
+ */
+const SOURCE_QUIET_ALERT_HOURS = 14;
+
 /** กันอีเมลถล่ม: แจ้งเตือนเรื่องเดิมซ้ำได้ไม่เกินหนึ่งครั้งในกี่ชั่วโมง */
 const ALERT_COOLDOWN_HOURS = 6;
 
@@ -139,13 +146,22 @@ function keepAwake() {
   const summary = 'สถานี ' + s.total + ' จุด · สด ' + s.fresh +
                   ' · ค้าง ' + s.stale + ' · ล้นตลิ่ง ' + s.overflowing;
 
-  if (s.fresh < MIN_FRESH_STATIONS) {
-    alertOnce('stale',
-              'FloodWatch TH: ข้อมูลระดับน้ำอาจค้าง',
-              'เว็บตอบปกติ แต่ข้อมูลที่ยังสดมีเพียง ' + s.fresh + ' จุด ' +
-              '(เกณฑ์ที่ตั้งไว้ ' + MIN_FRESH_STATIONS + ')\n\n' + summary +
-              '\n\nแปลว่าการซิงก์จากต้นทางน่าจะมีปัญหา ทั้งที่หน้าเว็บยังดูปกติดี' +
-              '\nตรวจ log ได้ที่ https://dashboard.render.com');
+  // เตือนเฉพาะเรื่องที่ทำอะไรได้
+  //
+  // เดิมเตือนเมื่อ "สถานีสด" ต่ำกว่าเกณฑ์ แล้วสรุปเองว่า "การซิงก์น่าจะมีปัญหา"
+  // ซึ่งไม่จริง คลังข้อมูลน้ำแห่งชาติเงียบตอนกลางคืน พอถึงตี 4 ทุกสถานีก็อายุ
+  // เกิน 6 ชม. พร้อมกันหมด ทั้งที่ระบบเราซิงก์ทุก 15 นาทีอยู่ตลอด (วัดแล้ว)
+  // เตือนเรื่องที่เจ้าของแก้ไม่ได้ กลางดึก คือวิธีทำให้การเตือนครั้งที่สำคัญจริง
+  // ถูกมองข้าม
+  //
+  // สองกรณีที่ยังเตือน: ซิงก์ของเราล้มเหลวจริง และต้นทางเงียบนานกว่าคืนหนึ่ง
+  const why = staleAlertReason(s);
+  if (why) {
+    alertOnce('stale', 'FloodWatch TH: ข้อมูลระดับน้ำมีปัญหา',
+              why + '\n\n' + summary +
+              '\n\nข้อมูลล่าสุดที่วัดได้: ' + (s.newest_measured_at || 'ไม่ทราบ') +
+              '\nซิงก์ล่าสุดของเรา: ' + (s.last_synced_at || 'ไม่ทราบ') +
+              '\n\nตรวจ log ได้ที่ https://dashboard.render.com');
   } else {
     clearAlert('stale');
   }
@@ -499,6 +515,52 @@ function testTelegram() {
 }
 
 /** ดึง JSON จาก API ของเรา คืน {ok, data} หรือ {ok:false, error} */
+/**
+ * เหตุผลที่ควรเตือนเรื่องข้อมูลระดับน้ำ หรือ null ถ้าไม่ต้องเตือน
+ * แยกออกมาเป็นฟังก์ชันล้วน ๆ เพื่อให้ทดสอบได้ (backend/test_keepalive_alert.cjs)
+ */
+function staleAlertReason(s) {
+  const failed = Object.keys(s.sources || {}).filter(function (name) {
+    return s.sources[name] && s.sources[name].ok === false;
+  });
+  if (failed.length) {
+    return 'การซิงก์ของเราล้มเหลว — ' + describeSyncErrors(s.sources);
+  }
+  const ageH = ageInHours(s.newest_measured_at);
+  if (ageH !== null && ageH > SOURCE_QUIET_ALERT_HOURS) {
+    return 'ต้นทางไม่มีข้อมูลใหม่มา ' + ageH.toFixed(1) + ' ชม. ' +
+           '(ปกติเงียบข้ามคืนแล้วกลับมาช่วงเช้า เกินกว่านี้ผิดปกติ)';
+  }
+  // ไม่รู้เวลาที่วัดเลย แปลว่าฐานข้อมูลว่างหรือ API เก่า — อันนี้ควรรู้
+  if (ageH === null && !s.total) {
+    return 'ไม่มีสถานีในระบบเลย';
+  }
+  return null;
+}
+
+/** อายุของเวลาที่ให้มา เป็นชั่วโมง คืน null ถ้าอ่านไม่ได้ */
+function ageInHours(iso) {
+  if (!iso) return null;
+  // เวลาจากเซิร์ฟเวอร์เป็น UTC แต่บางครั้งไม่มีตัว Z ต่อท้าย ถ้าไม่เติมให้
+  // เครื่องจะตีความเป็นเวลาไทย แล้วได้อายุติดลบ 7 ชม. — กลายเป็นไม่เตือนเลย
+  const text = /[Z+]|[0-9]-[0-9]{2}:[0-9]{2}$/.test(iso) ? iso : iso + 'Z';
+  const at = new Date(text).getTime();
+  if (isNaN(at)) return null;
+  return (Date.now() - at) / 3600000;
+}
+
+/** ข้อความสั้น ๆ ว่าแหล่งไหนพังเพราะอะไร */
+function describeSyncErrors(sources) {
+  const parts = [];
+  Object.keys(sources || {}).forEach(function (name) {
+    const entry = sources[name];
+    if (entry && entry.ok === false) {
+      parts.push(name + ': ' + (entry.error || 'ไม่ทราบสาเหตุ'));
+    }
+  });
+  return parts.length ? parts.join(' · ') : 'ไม่ทราบสาเหตุ';
+}
+
 function fetchJson(path) {
   try {
     const res = UrlFetchApp.fetch(BASE_URL + path, {

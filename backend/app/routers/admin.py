@@ -1,6 +1,6 @@
 """Moderation queue, user management, audit trail."""
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from ..database import get_db
@@ -20,15 +20,18 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 def moderation_queue(db: Session = Depends(get_db), _: User = Depends(require_moderator),
                      limit: int = Query(default=100, ge=1, le=500)):
     """Oldest pending reports first — during a flood, waiting is the whole cost."""
+    # Two things need a person: reports never reviewed, and reports on the map
+    # that enough people have since disputed. The second used to arrive here by
+    # being un-approved, which also took it off the map; it now stays visible
+    # and waits here instead.
+    waiting = or_(FloodReport.status == ReportStatus.pending.value,
+                  FloodReport.needs_review.is_(True))
     rows = db.execute(
         select(FloodReport).options(joinedload(FloodReport.province))
-        .where(FloodReport.status == ReportStatus.pending.value)
+        .where(waiting)
         .order_by(FloodReport.created_at.asc()).limit(limit)
     ).unique().scalars().all()
-    total = db.execute(
-        select(func.count(FloodReport.id))
-        .where(FloodReport.status == ReportStatus.pending.value)
-    ).scalar() or 0
+    total = db.execute(select(func.count(FloodReport.id)).where(waiting)).scalar() or 0
     return ReportListOut(total=total, items=[report_to_out(r) for r in rows])
 
 
@@ -43,6 +46,8 @@ def moderate(report_id: str, payload: ModerateIn, db: Session = Depends(get_db),
     report.moderated_by = user.id
     report.moderated_at = utcnow()
     report.moderation_note = payload.note
+    # A person has now decided, whichever way; it should leave the queue.
+    report.needs_review = False
     if payload.level is not None:
         report.level = payload.level.value
     if payload.source is not None:

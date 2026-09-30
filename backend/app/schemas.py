@@ -157,6 +157,10 @@ class ReportOut(ORMModel):
     # note itself, because that field holds whatever a moderator typed and this
     # schema is what the public map endpoint returns.
     auto_approved: bool = False
+    # On the map, but enough people have said the water has gone that a
+    # moderator should look. Shown to readers as a caveat rather than hidden:
+    # they are entitled to know the warning is contested.
+    needs_review: bool = False
     camera_id: str | None
     created_at: datetime
     updated_at: datetime

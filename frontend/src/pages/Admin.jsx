@@ -78,6 +78,13 @@ function Queue() {
                       ขึ้นเอง · ยังไม่มีคนตรวจ
                     </span>
                   )}
+                  {/* Why this one is in the queue at all: it is already on the
+                      map, and people are disagreeing about it. */}
+                  {report.needs_review && (
+                    <span className="ml-2 rounded-md border border-rose-700 bg-rose-950/50 px-1.5 py-0.5 align-middle text-xs font-normal text-rose-300">
+                      อยู่บนแผนที่ · มีผู้แย้ง {report.dispute_count} ราย
+                    </span>
+                  )}
                 </p>
                 <p className="text-sm" style={{ color: LEVELS[report.level]?.color }}>
                   {report.level_label || levelLabel(report.level)}

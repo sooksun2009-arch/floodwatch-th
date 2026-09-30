@@ -84,6 +84,8 @@ const reportsToGeoJSON = (reports, t) => ({
       ageMinutes: r.age_minutes ?? '',
       source: r.source,
       photo: r.photo_url || '',
+      // MapLibre feature properties are flat values, so a boolean travels as 0/1.
+      needsReview: r.needs_review ? 1 : 0,
       critical: r.level === 'severe' || r.level === 'closed' ? 1 : 0,
     },
   })),
@@ -604,6 +606,13 @@ export default function MapView({
         { confirms: props.confirms, disputes: props.disputes })
       counts.style.cssText = 'color:#94a3b8'
       root.appendChild(counts)
+
+      // Contested, and still shown. The reader is the one driving; they are
+      // owed the disagreement rather than a pin that quietly vanished.
+      if (props.needsReview === 1) {
+        line(tRef.current('popup.disputed'),
+             'color:#fbbf24;font-weight:600;margin-top:.25rem')
+      }
 
       // Only same-origin upload paths are rendered; an absolute URL from a
       // report could otherwise point anywhere, including a javascript: scheme.

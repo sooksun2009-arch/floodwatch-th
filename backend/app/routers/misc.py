@@ -7,7 +7,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from PIL import Image, UnidentifiedImageError
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from .. import area_overview, faceblur, floodroads, storage
@@ -59,9 +59,13 @@ def summary(db: Session = Depends(get_db)):
     return SummaryOut(
         active_reports=sum(n for _, n in by_level_rows),
         by_level={lv: n for lv, n in by_level_rows},
+        # Includes pins still on the map that people have disputed. They wait
+        # for a person too, and counting them here means the existing alert
+        # (keepalive.gs reads this number) covers them with no change there.
         pending_moderation=db.execute(
-            select(func.count(FloodReport.id))
-            .where(FloodReport.status == ReportStatus.pending.value)
+            select(func.count(FloodReport.id)).where(
+                or_(FloodReport.status == ReportStatus.pending.value,
+                    FloodReport.needs_review.is_(True)))
         ).scalar() or 0,
         provinces_affected=db.execute(
             select(func.count(func.distinct(FloodReport.province_id))).where(approved)

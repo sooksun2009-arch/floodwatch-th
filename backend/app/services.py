@@ -130,10 +130,15 @@ def apply_vote_side_effects(report: FloodReport) -> None:
     if (report.dispute_count >= settings.auto_flag_disputes
             and report.dispute_count > report.confirm_count
             and report.status == ReportStatus.approved.value):
-        report.status = ReportStatus.pending.value
+        # Flagged, not removed. This used to set the status back to pending,
+        # which took the pin off the public map — so three votes from three
+        # addresses could delete a genuine flood warning, and the next driver
+        # saw clear road where there was water. Filing a warning should be
+        # cheap; withdrawing one should need a person.
+        report.needs_review = True
         report.moderation_note = (
-            f"ถูกดึงกลับคิวตรวจอัตโนมัติ: มีผู้แย้ง {report.dispute_count} ราย "
-            f"มากกว่าผู้ยืนยัน {report.confirm_count} ราย"
+            f"รอตรวจสอบ: มีผู้แย้งว่าน้ำลดแล้ว {report.dispute_count} ราย "
+            f"มากกว่าผู้ยืนยัน {report.confirm_count} ราย — ยังแสดงบนแผนที่จนกว่าผู้ดูแลจะตัดสิน"
         )
     report.updated_at = utcnow()
 

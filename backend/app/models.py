@@ -140,6 +140,12 @@ class FloodReport(Base):
 
     confirm_count = Column(Integer, nullable=False, default=0)
     dispute_count = Column(Integer, nullable=False, default=0)
+    # Enough people said the water had gone that a moderator should look.
+    # The pin stays on the map while that happens: taking it down on three
+    # anonymous votes would let anyone erase a real warning for the price of
+    # three IP addresses, and the reader who then drives into the water is
+    # the whole cost of getting this wrong.
+    needs_review = Column(Boolean, nullable=False, default=False)
 
     created_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, index=True)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow)

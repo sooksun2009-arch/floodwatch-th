@@ -225,7 +225,8 @@ function relayBMA() {
   }
   if (summary.getResponseCode() !== 200) {
     // เว็บเขาจำกัดจำนวนครั้ง เจอ 403 เป็นครั้งคราวถือว่าปกติ รอบหน้าค่อยลองใหม่
-    Logger.log('เว็บ กทม. ตอบ HTTP %s', summary.getResponseCode());
+    // String(): Logger.log("%s", 403) prints "403.0" in Apps Script.
+    Logger.log('เว็บ กทม. ตอบ HTTP %s', String(summary.getResponseCode()));
     return 'กทม. ตอบ HTTP ' + summary.getResponseCode();
   }
 

@@ -118,6 +118,11 @@ class Settings(BaseSettings):
     # avoids needing an external scheduler and an API token just to keep water
     # levels current. 0 syncs once at boot and then stops.
     station_sync_interval_min: int = 15
+    # When the gauge data deserves a person's attention. Decided here, not in
+    # keepalive.gs: that script lives in the owner's Google account, and every
+    # change to the rule used to mean pasting it in again by hand.
+    alert_after_sync_failures: int = 3
+    alert_after_quiet_hours: int = 14
     # A camera frame older than this marks the camera "stale" — agency snapshot
     # endpoints keep returning HTTP 200 long after the picture stops updating.
     camera_stale_minutes: int = 90

@@ -83,6 +83,38 @@ async def lifespan(app: FastAPI):
             """
             first = True
             failures = 0
+
+            # Do not ask the source again the moment the container starts if
+            # we asked it a few minutes ago. During a deploy the old and the new
+            # container overlap, so a sync on boot is a second request within
+            # minutes of the first — and on 2026-10-03, a day of several deploys,
+            # those were exactly the requests the source answered with 429.
+            # The last sync time lives in the database, so it survives restarts.
+            try:
+                from sqlalchemy import func, select as _select
+
+                from .models import WaterStation, utcnow
+
+                db = SessionLocal()
+                try:
+                    last = db.execute(_select(func.max(WaterStation.synced_at))).scalar()
+                finally:
+                    db.close()
+                if last is not None:
+                    if last.tzinfo is None:
+                        from datetime import timezone as _tz
+                        last = last.replace(tzinfo=_tz.utc)
+                    interval = max(1, settings.station_sync_interval_min) * 60
+                    elapsed = (utcnow() - last).total_seconds()
+                    if elapsed < interval:
+                        logger.info("ซิงก์สถานีล่าสุดเมื่อ %d วินาทีก่อน — รอรอบถัดไป",
+                                    int(elapsed))
+                        await asyncio.sleep(interval - elapsed)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("อ่านเวลาซิงก์ล่าสุดไม่ได้ — ซิงก์ทันที")
+
             while True:
                 if not first:
                     # Back off while the source is failing: 15, 30, then 60

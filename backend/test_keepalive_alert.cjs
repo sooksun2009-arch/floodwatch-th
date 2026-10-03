@@ -52,6 +52,14 @@ check('API เก่าที่ไม่ส่งจำนวนรอบ -> �
   staleAlertReason({ total: 807, sources: { thaiwater: { ok: false, error: 'x' } },
                      newest_measured_at: hoursAgo(1) }) === null)
 
+// The server now decides; the script only relays. Tuning the rule no longer
+// means the owner pasting this file in again.
+check('เซิร์ฟเวอร์บอกว่าไม่ต้องเตือน (alert: null) -> ไม่ปลุก แม้ข้อมูลอื่นจะดูแย่',
+  staleAlertReason({ alert: null, total: 807, fresh: 0, consecutive_failures: 9,
+                     sources: { thaiwater: { ok: false } }, newest_measured_at: hoursAgo(30) }) === null)
+check('เซิร์ฟเวอร์บอกเหตุผล -> ส่งต่อข้อความนั้นตรง ๆ',
+  staleAlertReason({ alert: 'การซิงก์ล้มเหลวติดกัน 3 รอบแล้ว' }) === 'การซิงก์ล้มเหลวติดกัน 3 รอบแล้ว')
+
 check('ทุกอย่างปกติ -> ไม่ปลุก',
   staleAlertReason({ total: 807, fresh: 791, sources: okSources,
                      newest_measured_at: hoursAgo(0.5) }) === null)

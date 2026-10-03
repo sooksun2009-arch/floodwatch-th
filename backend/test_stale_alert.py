@@ -126,6 +126,38 @@ with TestClient(app) as c:
     check("เพิ่งรีสตาร์ท ไม่มีประวัติ -> 0 รอบ ไม่มีเวลาสำเร็จ (ไม่ปลุกมั่ว)",
           empty["consecutive_failures"] == 0 and empty["last_success_at"] is None, empty)
 
+    # ------------------------------------------------- the verdict the script relays
+    stations.SYNC_HISTORY.clear()
+    with SessionLocal() as db:
+        for row in db.query(WaterStation).all():
+            row.measured_at = utcnow() - timedelta(minutes=30)
+        db.commit()
+    stations.LAST_SYNC["thaiwater"] = {"ok": False, "error": "ต้นทางตอบ HTTP 429"}
+    run(True); run(False)
+    v = c.get("/api/stations/summary").json()
+    check("ล้มเหลวรอบเดียว ข้อมูลยังสด -> alert เป็น null", v["alert"] is None, v["alert"])
+    run(False); run(False)
+    v = c.get("/api/stations/summary").json()
+    check("ล้มเหลวติดกัน 3 รอบ -> alert บอกจำนวนรอบและสาเหตุ",
+          v["alert"] and "ติดกัน 3 รอบ" in v["alert"] and "429" in v["alert"], v["alert"])
+    check("และบอกเวลาที่ซิงก์สำเร็จล่าสุดเป็นเวลาไทย",
+          v["alert"] and "น." in v["alert"], v["alert"])
+
+    stations.SYNC_HISTORY.clear()
+    stations.LAST_SYNC["thaiwater"] = {"ok": True, "error": None}
+    with SessionLocal() as db:
+        for row in db.query(WaterStation).all():
+            row.measured_at = utcnow() - timedelta(hours=8)
+        db.commit()
+    v = c.get("/api/stations/summary").json()
+    check("ต้นทางเงียบข้ามคืน 8 ชม. -> alert เป็น null", v["alert"] is None, v["alert"])
+    with SessionLocal() as db:
+        for row in db.query(WaterStation).all():
+            row.measured_at = utcnow() - timedelta(hours=20)
+        db.commit()
+    v = c.get("/api/stations/summary").json()
+    check("ต้นทางเงียบ 20 ชม. -> alert", v["alert"] and "20" in v["alert"], v["alert"])
+
     for _ in range(30):
         stations.SYNC_HISTORY.append({"at": utcnow(), "ok": True})
     check("ประวัติไม่โตไม่สิ้นสุด (กันหน่วยความจำบวม)",

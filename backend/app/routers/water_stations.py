@@ -17,7 +17,8 @@ from ..models import STATION_SITUATION_TH, User, WaterStation
 from ..schemas import WaterStationOut
 from ..services import log_action, station_to_out as to_out
 from ..stations import (
-    LAST_SYNC, SYNC_HISTORY, newest_measured_at, stale_cutoff, sync_all, sync_streak,
+    LAST_SYNC, SYNC_HISTORY, alert_reason, newest_measured_at, stale_cutoff, sync_all,
+    sync_streak,
 )
 
 router = APIRouter(prefix="/api/stations", tags=["water-stations"])
@@ -126,6 +127,10 @@ def summary(db: Session = Depends(get_db)):
         # failure is noise; the alert should key on the streak.
         "consecutive_failures": sync_streak()[0],
         "last_success_at": sync_streak()[1],
+        # The verdict keepalive.gs relays: a sentence when a person should look,
+        # null otherwise. Kept server-side so tuning it never again means
+        # asking the owner to paste the script in by hand.
+        "alert": alert_reason(len(rows), newest_measured_at(db)),
         # Why a source is missing, rather than only that the count looks low.
         # Bangkok's gauges have been absent since the first deploy and the only
         # place that said so was a log line nobody could reach from outside.

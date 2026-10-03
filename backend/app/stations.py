@@ -294,6 +294,37 @@ async def sync_all(db: Session) -> dict:
     return results
 
 
+def alert_reason(total: int, newest: datetime | None) -> str | None:
+    """Whether the gauge data needs a person, and why — or None.
+
+    Two things are worth waking someone for: our sync failing several times
+    in a row, and the source going silent for longer than a night. One failed
+    run is not (the source rate-limits now and then, and the next run mends
+    it), and an overnight lull is not (the national feed is quiet every
+    night). Both of those woke the owner before this was written.
+    """
+    streak, last_ok = sync_streak()
+    if streak >= settings.alert_after_sync_failures:
+        errors = "; ".join(f"{name}: {v.get('error') or 'ไม่ทราบสาเหตุ'}"
+                           for name, v in LAST_SYNC.items() if not v.get("ok"))
+        since = (f" (ซิงก์สำเร็จล่าสุด {_bangkok(last_ok)})" if last_ok else "")
+        return f"การซิงก์ล้มเหลวติดกัน {streak} รอบแล้ว — {errors or 'ไม่ทราบสาเหตุ'}{since}"
+    if newest is not None:
+        hours = (utcnow() - newest).total_seconds() / 3600
+        if hours > settings.alert_after_quiet_hours:
+            return (f"ต้นทางไม่มีข้อมูลใหม่มา {hours:.1f} ชม. "
+                    "(ปกติเงียบข้ามคืนแล้วกลับมาช่วงเช้า นานกว่านี้ผิดปกติ)")
+    elif total == 0:
+        return "ไม่มีสถานีวัดน้ำในระบบเลย"
+    return None
+
+
+def _bangkok(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone(timedelta(hours=7))).strftime("%d/%m %H:%M น.")
+
+
 def sync_streak() -> tuple[int, datetime | None]:
     """(consecutive failed runs, when the last good run finished).
 

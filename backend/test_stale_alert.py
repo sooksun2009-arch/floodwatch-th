@@ -100,6 +100,32 @@ with TestClient(app) as c:
     check("รอบที่ล้มเหลวมีสาเหตุให้อ่าน",
           c.get("/api/stations/summary").json()["sources"]["thaiwater"]["error"] == "ConnectTimeout")
 
+    # ------------------------------------------------- the streak, not the last run
+    def run(ok):
+        stations.SYNC_HISTORY.append({"at": utcnow(), "ok": ok})
+
+    stations.SYNC_HISTORY.clear()
+    for ok in (True, True, False):
+        run(ok)
+    one = c.get("/api/stations/summary").json()
+    check("ล้มเหลวรอบเดียว -> นับสตรีค 1", one["consecutive_failures"] == 1, one["consecutive_failures"])
+
+    run(True)
+    healed = c.get("/api/stations/summary").json()
+    check("สำเร็จแล้ว -> สตรีคกลับเป็น 0 (หายเอง ไม่ต้องปลุกใคร)",
+          healed["consecutive_failures"] == 0, healed["consecutive_failures"])
+
+    for _ in range(4):
+        run(False)
+    down = c.get("/api/stations/summary").json()
+    check("ล้มเหลวติดกัน 4 รอบ -> สตรีค 4", down["consecutive_failures"] == 4, down["consecutive_failures"])
+    check("และบอกเวลาที่ซิงก์สำเร็จล่าสุด", down["last_success_at"] is not None, down["last_success_at"])
+
+    stations.SYNC_HISTORY.clear()
+    empty = c.get("/api/stations/summary").json()
+    check("เพิ่งรีสตาร์ท ไม่มีประวัติ -> 0 รอบ ไม่มีเวลาสำเร็จ (ไม่ปลุกมั่ว)",
+          empty["consecutive_failures"] == 0 and empty["last_success_at"] is None, empty)
+
     for _ in range(30):
         stations.SYNC_HISTORY.append({"at": utcnow(), "ok": True})
     check("ประวัติไม่โตไม่สิ้นสุด (กันหน่วยความจำบวม)",

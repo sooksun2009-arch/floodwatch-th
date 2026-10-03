@@ -33,16 +33,24 @@ check('ต้นทางเงียบนานผิดปกติ (20 ช�
   /ไม่มีข้อมูลใหม่/.test(staleAlertReason({ total: 807, fresh: 0, sources: okSources,
                                             newest_measured_at: hoursAgo(20) }) || ''))
 
-check('ซิงก์ของเราล้มเหลว -> เตือน แม้ข้อมูลจะยังไม่เก่า',
-  /ซิงก์ของเราล้มเหลว/.test(staleAlertReason({
-    total: 807, fresh: 700,
-    sources: { thaiwater: { ok: false, error: 'ConnectTimeout' } },
-    newest_measured_at: hoursAgo(1) }) || ''))
+const failing = (streak) => ({
+  total: 807, fresh: 700, consecutive_failures: streak,
+  sources: { thaiwater: { ok: false, error: 'ต้นทางตอบ HTTP 429' } },
+  newest_measured_at: hoursAgo(1), last_success_at: hoursAgo(2) })
 
-check('บอกสาเหตุของความล้มเหลวมาด้วย',
-  /ConnectTimeout/.test(staleAlertReason({
-    total: 807, sources: { thaiwater: { ok: false, error: 'ConnectTimeout' } },
-    newest_measured_at: hoursAgo(1) }) || ''))
+// The 16:20 case on 2026-10-03: one 429, then the retry thirty minutes later
+// simply worked. The alert fired on the first failure and woke the owner for
+// something that had already mended itself.
+check('ล้มเหลวรอบเดียว (429 ชั่วคราว) -> ไม่ปลุก', staleAlertReason(failing(1)) === null)
+check('ล้มเหลว 2 รอบติด -> ยังไม่ปลุก', staleAlertReason(failing(2)) === null)
+check('ล้มเหลว 3 รอบติด -> เตือน',
+  /ติดกัน 3 รอบ/.test(staleAlertReason(failing(3)) || ''))
+check('บอกสาเหตุและเวลาที่ซิงก์สำเร็จล่าสุดมาด้วย',
+  /HTTP 429/.test(staleAlertReason(failing(5)) || '')
+  && /ซิงก์สำเร็จล่าสุด/.test(staleAlertReason(failing(5)) || ''))
+check('API เก่าที่ไม่ส่งจำนวนรอบ -> ไม่ปลุกมั่ว',
+  staleAlertReason({ total: 807, sources: { thaiwater: { ok: false, error: 'x' } },
+                     newest_measured_at: hoursAgo(1) }) === null)
 
 check('ทุกอย่างปกติ -> ไม่ปลุก',
   staleAlertReason({ total: 807, fresh: 791, sources: okSources,

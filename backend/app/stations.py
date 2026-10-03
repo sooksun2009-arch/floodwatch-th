@@ -294,6 +294,22 @@ async def sync_all(db: Session) -> dict:
     return results
 
 
+def sync_streak() -> tuple[int, datetime | None]:
+    """(consecutive failed runs, when the last good run finished).
+
+    One failed run is weather: the source answered 429 for twenty minutes on
+    2026-10-03 and the next attempt, thirty minutes later, simply worked. A
+    streak is a problem. The alert used to fire on the first, which woke the
+    owner for something that had already mended itself.
+    """
+    failures = 0
+    for entry in reversed(SYNC_HISTORY):
+        if entry["ok"]:
+            return failures, entry["at"]
+        failures += 1
+    return failures, None
+
+
 def newest_measured_at(db: Session) -> datetime | None:
     """When the freshest reading we hold was taken at the gauge.
 

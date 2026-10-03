@@ -79,6 +79,12 @@ const MIN_FRESH_STATIONS = 300;
  */
 const SOURCE_QUIET_ALERT_HOURS = 14;
 
+/**
+ * ซิงก์ล้มเหลวติดกันกี่รอบถึงจะเตือน เพราะระบบถอยรอบ 15 → 30 → 60 นาที
+ * 3 รอบจึงใช้เวลาราว 1.5 ชั่วโมง นานพอให้ต้นทางที่แค่สะดุดกลับมาเองก่อน
+ */
+const SYNC_FAILURES_BEFORE_ALERT = 3;
+
 /** กันอีเมลถล่ม: แจ้งเตือนเรื่องเดิมซ้ำได้ไม่เกินหนึ่งครั้งในกี่ชั่วโมง */
 const ALERT_COOLDOWN_HOURS = 6;
 
@@ -521,11 +527,14 @@ function testTelegram() {
  * แยกออกมาเป็นฟังก์ชันล้วน ๆ เพื่อให้ทดสอบได้ (backend/test_keepalive_alert.cjs)
  */
 function staleAlertReason(s) {
-  const failed = Object.keys(s.sources || {}).filter(function (name) {
-    return s.sources[name] && s.sources[name].ok === false;
-  });
-  if (failed.length) {
-    return 'การซิงก์ของเราล้มเหลว — ' + describeSyncErrors(s.sources);
+  // ล้มเหลวติดกันหลายรอบเท่านั้นถึงเตือน รอบเดียวคือสภาพอากาศ: ต้นทางตอบ 429
+  // อยู่ 20 นาทีเมื่อ 2026-10-03 แล้วรอบถัดไป (ถอยไป 30 นาที) ก็ใช้ได้เอง
+  // เตือนตั้งแต่รอบแรกคือปลุกเจ้าของเรื่องที่หายเองไปแล้ว
+  const streak = Number(s.consecutive_failures) || 0;
+  if (streak >= SYNC_FAILURES_BEFORE_ALERT) {
+    return 'การซิงก์ของเราล้มเหลวติดกัน ' + streak + ' รอบแล้ว — ' +
+           describeSyncErrors(s.sources) +
+           (s.last_success_at ? ' (ซิงก์สำเร็จล่าสุด ' + s.last_success_at + ')' : '');
   }
   const ageH = ageInHours(s.newest_measured_at);
   if (ageH !== null && ageH > SOURCE_QUIET_ALERT_HOURS) {

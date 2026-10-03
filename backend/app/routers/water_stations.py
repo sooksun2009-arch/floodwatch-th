@@ -17,7 +17,7 @@ from ..models import STATION_SITUATION_TH, User, WaterStation
 from ..schemas import WaterStationOut
 from ..services import log_action, station_to_out as to_out
 from ..stations import (
-    LAST_SYNC, SYNC_HISTORY, newest_measured_at, stale_cutoff, sync_all,
+    LAST_SYNC, SYNC_HISTORY, newest_measured_at, stale_cutoff, sync_all, sync_streak,
 )
 
 router = APIRouter(prefix="/api/stations", tags=["water-stations"])
@@ -122,6 +122,10 @@ def summary(db: Session = Depends(get_db)):
         "newest_measured_at": newest_measured_at(db),
         "stale_after_hours": settings.station_stale_hours,
         "recent_syncs": list(SYNC_HISTORY),
+        # How many runs in a row have failed, and when one last worked. A single
+        # failure is noise; the alert should key on the streak.
+        "consecutive_failures": sync_streak()[0],
+        "last_success_at": sync_streak()[1],
         # Why a source is missing, rather than only that the count looks low.
         # Bangkok's gauges have been absent since the first deploy and the only
         # place that said so was a log line nobody could reach from outside.

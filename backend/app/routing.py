@@ -15,6 +15,7 @@ a degraded answer labelled as degraded beats no answer during a flood.
 import asyncio
 import math
 from dataclasses import dataclass, field
+from datetime import timezone
 
 import httpx
 from sqlalchemy import select
@@ -23,6 +24,7 @@ from sqlalchemy.orm import Session, joinedload
 from . import flood_extent, floodroads
 from .config import settings
 from .geo import haversine_km, in_thailand
+from .stations import stale_cutoff
 from .models import (
     Camera, FloodReport, LEVEL_RANK, LEVEL_TH, ReportStatus, WaterStation,
 )
@@ -476,6 +478,8 @@ class RouteAnalysis:
     cameras: list[tuple[Camera, int, float]] = field(default_factory=list)
     # Gauges near the route that are currently over their bank.
     stations: list[tuple[WaterStation, int, float]] = field(default_factory=list)
+    # Overflowing at their last reading, but too old to say anything about now.
+    stale_stations: int = 0
     # Flooded stretches along the route, from Floodboard.
     roads: list[dict] = field(default_factory=list)
     verdict: str = "clear"
@@ -561,11 +565,23 @@ def analyse_route(db: Session, geometry: RouteGeometry, corridor_m: int,
         .where(WaterStation.lng.between(st_min_lng, st_max_lng))
     ).scalars().all()
 
+    # Only readings recent enough to describe the water now. "Canal currently
+    # over its bank" printed above a reading from the day before is a claim the
+    # data does not make -- and the source went 33 hours without updating.
+    cutoff = stale_cutoff()
     near_stations: list[tuple[WaterStation, int, float]] = []
+    stale_near = 0
     for gauge in gauges:
         dist_km, along_km = point_to_path_km(gauge.lat, gauge.lng, geometry.path)
-        if dist_km <= station_km:
-            near_stations.append((gauge, int(round(dist_km * 1000)), round(along_km, 2)))
+        if dist_km > station_km:
+            continue
+        measured = gauge.measured_at
+        if measured is not None and measured.tzinfo is None:
+            measured = measured.replace(tzinfo=timezone.utc)
+        if measured is None or measured < cutoff:
+            stale_near += 1
+            continue
+        near_stations.append((gauge, int(round(dist_km * 1000)), round(along_km, 2)))
     near_stations.sort(key=lambda item: item[2])
 
     roads = floodroads.along_route(road_segments or [], geometry.path)
@@ -581,7 +597,8 @@ def analyse_route(db: Session, geometry: RouteGeometry, corridor_m: int,
              + geometry.distance_km)
 
     return RouteAnalysis(geometry=geometry, obstacles=obstacles, cameras=on_route_cams,
-                         stations=near_stations, roads=roads, verdict=verdict,
+                         stations=near_stations, stale_stations=stale_near,
+                         roads=roads, verdict=verdict,
                          worst_level=worst, score=score)
 
 
@@ -792,6 +809,12 @@ async def check_route(db: Session, origin: tuple[float, float], dest: tuple[floa
     # the start or the finish, no detour can help, and a route labelled "flood
     # avoidance" that still says "do not go" reads as the feature being
     # broken. Say which it is instead.
+    if primary.stale_stations:
+        old = (f"ไม่ได้นำสถานีวัดน้ำใกล้เส้นทาง {primary.stale_stations} แห่งมาประกอบ "
+               f"เพราะข้อมูลเก่ากว่า {settings.station_stale_hours} ชม. "
+               "(ครั้งล่าสุดที่วัดได้ล้นตลิ่ง) — คลองอาจยังล้นอยู่")
+        degraded = f"{degraded} {old}" if degraded else old
+
     stuck = _blocked_at_an_end(primary)
     if stuck and VERDICT_ORDER[primary.verdict] >= VERDICT_ORDER["risky"]:
         note = (f"จุดที่ผ่านไม่ได้อยู่ตรง{stuck} — ไม่มีเส้นทางไหนเลี่ยงได้ "

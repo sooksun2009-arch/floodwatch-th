@@ -82,15 +82,24 @@ async def lifespan(app: FastAPI):
             poison the next.
             """
             first = True
+            failures = 0
             while True:
                 if not first:
-                    await asyncio.sleep(max(1, settings.station_sync_interval_min) * 60)
+                    # Back off while the source is failing: 15, 30, then 60
+                    # minutes. The national gauge database was out of
+                    # connections for over a day, and asking every quarter
+                    # hour only added to the queue of a service that was
+                    # already refusing people.
+                    wait = max(1, settings.station_sync_interval_min) * 60 * min(4, 2 ** failures)
+                    await asyncio.sleep(wait)
                 first = False
 
                 db = SessionLocal()
                 try:
                     logger.info("ซิงก์สถานี: เริ่ม")
-                    logger.info("ซิงก์สถานี: เสร็จ %s", await sync_all(db))
+                    outcome = await sync_all(db)
+                    failures = 0 if all(o.get("ok") for o in outcome.values()) else failures + 1
+                    logger.info("ซิงก์สถานี: เสร็จ %s", outcome)
                 except asyncio.CancelledError:
                     raise
                 except Exception:

@@ -82,7 +82,13 @@ async def fetch_waterlevel() -> list[dict]:
     payload = resp.json()
     block = payload.get("waterlevel_data") or {}
     if block.get("result") not in (None, "OK"):
-        raise ValueError(f"ต้นทางตอบ result={block.get('result')}")
+        # The source answers HTTP 200 with its own database error inside:
+        # on 2026-10-03 it was Postgres code 53300, out of connection slots,
+        # for over a day. Say that it is the source's fault, not a bad parse.
+        detail = block.get("data")
+        code = detail.get("Code") if isinstance(detail, dict) else None
+        raise ValueError("ต้นทางแจ้งว่าฐานข้อมูลของเขามีปัญหา"
+                         + (f" (รหัส {code})" if code else ""))
     rows = block.get("data")
     if not isinstance(rows, list):
         raise ValueError("รูปแบบข้อมูลจากต้นทางไม่ตรงกับที่คาดไว้")
@@ -203,13 +209,23 @@ def upsert(db: Session, records: list[dict]) -> tuple[int, int]:
     return created, updated
 
 
+def _short_error(exc: Exception) -> str:
+    """One readable line. httpx puts the URL and a documentation link in its
+    message, which made the alert a paragraph and buried the only useful part:
+    which status the source answered with."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"ต้นทางตอบ HTTP {exc.response.status_code}"
+    text = " ".join(str(exc).split())
+    return f"{type(exc).__name__}: {text}"[:160]
+
+
 async def sync(db: Session) -> dict:
     """Fetch and store. Safe to run on a schedule; never raises to the caller."""
     try:
         rows = await fetch_waterlevel()
     except (httpx.HTTPError, ValueError) as exc:
         logger.warning("ซิงก์สถานีวัดระดับน้ำไม่สำเร็จ: %s", exc)
-        return {"ok": False, "error": f"{type(exc).__name__}: {exc}",
+        return {"ok": False, "error": _short_error(exc),
                 "created": 0, "updated": 0, "skipped": 0}
 
     records, skipped = [], 0

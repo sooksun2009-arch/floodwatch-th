@@ -21,9 +21,13 @@ const REFRESH_MS = 3 * 60 * 1000
 const STYLE = {
   danger: 'border-red-700/70 bg-red-950/40 text-red-100',
   watch: 'border-amber-700/70 bg-amber-950/30 text-amber-100',
+  // Grey, not green: "we cannot see" must not wear the colour of "all clear".
+  unknown: 'border-slate-600/70 bg-slate-900/60 text-slate-200',
   normal: 'border-emerald-800/70 bg-emerald-950/30 text-emerald-100',
 }
-const DOT = { danger: 'bg-red-500', watch: 'bg-amber-400', normal: 'bg-emerald-400' }
+const DOT = {
+  danger: 'bg-red-500', watch: 'bg-amber-400', unknown: 'bg-slate-400', normal: 'bg-emerald-400',
+}
 
 function load() {
   try {
@@ -74,7 +78,9 @@ export default function AreaCard({ onFocus }) {
   const provinces = data?.provinces || []
   const mine = provinces.find((p) => p.name_th === chosen) || null
   const worrying = useMemo(
-    () => provinces.filter((p) => p.status !== 'normal' && p.name_th !== chosen).slice(0, 5),
+    () => provinces
+      .filter((p) => (p.status === 'danger' || p.status === 'watch') && p.name_th !== chosen)
+      .slice(0, 5),
     [provinces, chosen],
   )
   const sorted = useMemo(
@@ -126,6 +132,19 @@ export default function AreaCard({ onFocus }) {
     if (p.overflowing) parts.push(t('area.overflowing', { n: p.overflowing }))
     if (p.raining) parts.push(t('area.raining', { n: p.raining }))
     return parts
+  }
+
+  // The gauges for this province have stopped reporting. Says how old the
+  // newest reading in the country is, and what the last one said -- as history,
+  // never as a current count.
+  const gaugesOld = (p) => {
+    if (p.status !== 'unknown') return null
+    const hours = data.gauge_age_hours
+    const age = hours == null ? '' : hours >= 48
+      ? t('area.days', { n: Math.round(hours / 24) }) : t('area.hours', { n: Math.round(hours) })
+    const last = p.overflowing_last_known
+      ? ` ${t('area.lastKnownOver', { n: p.overflowing_last_known })}` : ''
+    return `${t('area.gaugesOld', { age })}${last}`
   }
 
   const select = (
@@ -192,7 +211,9 @@ export default function AreaCard({ onFocus }) {
         <span className="shrink-0 font-semibold">📍 {label(mine)}</span>
         <span className="shrink-0 font-semibold">· {t(`area.status.${mine.status}`)}</span>
         <span className="min-w-0 flex-1 truncate opacity-80">
-          {summary.length ? `· ${summary.join(' · ')}` : ''}
+          {mine.status === 'unknown'
+            ? `· ${t('area.gaugesOldShort')}`
+            : summary.length ? `· ${summary.join(' · ')}` : ''}
         </span>
         <span className="shrink-0 opacity-70">{open ? '▴' : '▾'}</span>
       </button>
@@ -200,12 +221,17 @@ export default function AreaCard({ onFocus }) {
       {open && (
         <div className="mt-2 space-y-2 border-t border-white/10 pt-2 lg:absolute lg:inset-x-0 lg:top-full lg:z-40 lg:mt-1 lg:rounded-xl lg:border lg:border-slate-700 lg:bg-slate-900 lg:p-3 lg:shadow-2xl">
           <p className="leading-relaxed opacity-90">
-            {summary.length ? summary.join(' · ') : t('area.nothing')}
+            {mine.status === 'unknown'
+              ? gaugesOld(mine)
+              : summary.length ? summary.join(' · ') : t('area.nothing')}
             {mine.stations > 0 && ` · ${t('area.stations', { n: mine.stations })}`}
             {mine.cameras > 0 && ` · ${t('area.cameras', { n: mine.cameras })}`}
           </p>
           {mine.status === 'normal' && (
             <p className="opacity-70">{t('area.normalCaveat')}</p>
+          )}
+          {mine.status === 'unknown' && (
+            <p className="opacity-70">{t('area.unknownCaveat')}</p>
           )}
           {data.rain_known === false && <p className="opacity-60">{t('area.noRain')}</p>}
           <div className="flex flex-wrap items-center gap-2">

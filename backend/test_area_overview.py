@@ -77,8 +77,12 @@ with TestClient(app) as c:
     check("เปิดได้โดยไม่ต้องล็อกอิน", r.status_code == 200, r.status_code)
     check("ส่งพิกัดกลางจังหวัดมาด้วย (ให้เบราว์เซอร์หาจังหวัดเอง)",
           all(p["lat"] and p["lng"] for p in rows.values()))
-    check("จังหวัดที่ไม่มีอะไร -> ปกติ (สถานีเก่าไม่นับ)", rows[quiet]["status"] == "normal",
-          rows[quiet])
+    # This used to expect "normal" and so enshrined the bug: a province whose
+    # only gauge had stopped reporting was read as one with nothing wrong. It
+    # is one we cannot see, and says so (see test_gauge_outage.py).
+    check("จังหวัดที่เหลือแต่สถานีเก่า (ล้นตลิ่งตอนนั้น) -> ไม่ทราบ ไม่ใช่ปกติ",
+          rows[quiet]["status"] == "unknown" and rows[quiet]["overflowing"] == 0
+          and rows[quiet]["overflowing_last_known"] == 1, rows[quiet])
     check("มีรายงาน + ล้นตลิ่ง -> เฝ้าระวัง", rows[watched]["status"] == "watch", rows[watched])
     check("รายงาน 'น้ำลดแล้ว' ไม่ถูกนับเป็นน้ำท่วม", rows[watched]["reports"] == 1,
           rows[watched])
